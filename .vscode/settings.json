@@ -1,0 +1,26 @@
+{
+    "json.format.keepLines": true,
+    "git.inputValidationLength": 100,
+    "git.inputValidationSubjectLength": null,
+    "ruff.trace.server": "messages",
+    "rewrap.wholeComment": false,
+    "rewrap.wrappingColumn": 100,
+    "conventionalCommits.autoCommit": false,
+    "conventionalCommits.promptScopes": false,
+    "conventionalCommits.showNewVersionNotes": false,
+    "[python]": {
+        "editor.defaultFormatter": "charliermarsh.ruff"
+    },
+    "python.analysis.diagnosticMode": "workspace",
+    "python.languageServer": "Pylance",
+    "python.terminal.activateEnvInCurrentTerminal": true,
+    "python.testing.pytestArgs": [
+        "tests"
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.pytestEnabled": true,
+    "python.autoComplete.extraPaths": [
+        "tests"
+    ],
+    "autoDocstring.docstringFormat": "sphinx",
+}

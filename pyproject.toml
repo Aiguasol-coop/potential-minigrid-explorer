@@ -1,0 +1,66 @@
+[project]
+dynamic = ["version"]
+name = "PUT_APP_NAME_HERE"
+description = "PUT_DESCRIPTION_HERE"
+authors = [
+    { name = "PUT_YOUR_NAME_HERE", email = "put_your@email.here" },
+]
+requires-python = ">=3.13"
+dependencies = [
+]
+
+[project.scripts]
+PUT_APP_NAME_HERE = "PUT_APP_NAME_HERE:main"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.1.0",
+    "pytest>=8.3.4",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.9.3",
+    "testcontainers[postgres]>=4.9.1",
+]
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.coverage.run]
+omit = ["tests/*"]
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/_version.py"
+
+[tool.pyright]
+include = ["src", "tests"]
+exclude = ["**/__pycache__"]
+ignore = ["src/_version.py"]
+typeCheckingMode = "strict"
+deprecateTypingAliases = true
+enableReachabilityAnalysis = true
+strictDictionaryInference = true
+strictListInference = true
+strictSetInference = true
+reportDeprecated = false
+
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "."]
+
+[tool.ruff]
+line-length = 100
+src = ["src"]
+
+[tool.ruff.lint]
+extend-select = ["E501"] # `line-too-long` rule
+
+[tool.uv]
+# To avoid uv complaining if it cannot create cross-filesystem links (e.g., when on Docker):
+link-mode = "copy"
+# Enable to trade longer installation times for faster start times (useful when deploying):
+compile-bytecode = false
+# We prefer to download Python ourselves:
+python-downloads = "never"
