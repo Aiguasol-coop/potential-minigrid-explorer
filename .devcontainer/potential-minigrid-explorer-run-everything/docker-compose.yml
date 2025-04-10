@@ -13,14 +13,14 @@ services:
     image: alpine
     restart: no
     healthcheck:
-      test: "[ -f /run/secrets/db_superadmin_password ] && [ -f /workspaces/PROJECTNAME/.env ]"
+      test: "[ -f /run/secrets/db_superadmin_password ] && [ -f /workspaces/potential-minigrid-explorer/.env ]"
       interval: 1s
       retries: 5
       start_period: 0s
     environment:
       <<: *global_env
     volumes:
-      - ../..:/workspaces/PROJECTNAME:cached
+      - ../..:/workspaces/potential-minigrid-explorer:cached
       - secrets_volume:/run/secrets
     command:
       - sh
@@ -31,7 +31,7 @@ services:
         echo 'test' > /run/secrets/db_role_db_owner_password
         openssl rand -hex 32 > /run/secrets/db_superadmin_password
         echo 'Generating initial .env file with variables in docker-compose.yml file...'
-        printenv | grep '^DB_' > /workspaces/PROJECTNAME/.env
+        printenv | grep '^DB_' > /workspaces/potential-minigrid-explorer/.env
         echo '.env file is ready!'
         sleep infinity
 
@@ -40,7 +40,7 @@ services:
     depends_on:
       - env-starter
     volumes:
-      - ../..:/workspaces/PROJECTNAME:cached
+      - ../..:/workspaces/potential-minigrid-explorer:cached
       - secrets_volume:/run/secrets:ro
     stdin_open: true # Enables interactive STDIN
     tty: true # Allocates a pseudo-TTY
