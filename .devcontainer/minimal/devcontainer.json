@@ -1,0 +1,62 @@
+// Minimal dev environment with all you need to edit the files and run some code (but no database,
+// etc). It can be used to debug the "run-everything" environment.
+{
+    "name": "PROJECTNAME-minimal",
+    "image": "mcr.microsoft.com/devcontainers/python:1-3.13-bookworm",
+    "runArgs": [
+        "--name",
+        "PROJECTNAME-minimal"
+    ],
+    "features": {
+        // docker-outside-of-docker: to access a testcontainer run on the host machine.
+        "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
+        "ghcr.io/gvatsal60/dev-container-features/pre-commit:1": {},
+        "ghcr.io/va-h/devcontainers-features/uv:1": {},
+        "ghcr.io/guiyomh/features/just:0": {},
+        "ghcr.io/robbert229/devcontainer-features/postgresql-client:1": {
+            "version": "17"
+        }
+    },
+    "postCreateCommand": "uv sync",
+    // Run after the container starts. We only need to install the git pre-commit hooks once, but we
+    // put it here so nobody forgets. We follow
+    // https://www.kenmuse.com/blog/avoiding-dubious-ownership-in-dev-containers/ to fix a problem
+    // with git security:
+    "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder} && pre-commit install",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                // Ruff linter and formatter for Python
+                "charliermarsh.ruff",
+                // Line wrap for comments (ALT-Q)
+                "dnut.rewrap-revived",
+                // editorconfig.org
+                "editorconfig.editorconfig",
+                // Run commands when a file is saved
+                "emeraldwalk.RunOnSave",
+                // Dockerfile syntax highlighter, linter and formatter (and probably more)
+                "ms-azuretools.vscode-docker",
+                // DISABLED: we use ruff instead
+                "-ms-python.autopep8",
+                // DISABLED: we use pyright instead (integrated in pylance)
+                "-ms-python.mypy-type-checker",
+                // Whatever M$ thinks is good to develop in Python
+                "ms-python.python",
+                // Python intellisense by M$
+                "ms-python.vscode-pylance",
+                // Justfile syntax support for Visual Studio Code
+                "nefrob.vscode-just-syntax",
+                // Snippets for Python docstrings
+                "njpwerner.autodocstring",
+                // YAML syntax highlighter, linter and formatter
+                "redhat.vscode-yaml",
+                // SQL formatter
+                "renesaarsoo.sql-formatter-vsc",
+                // Spell checking for strings and comments in code
+                "streetsidesoftware.code-spell-checker",
+                // TOML syntax highlighter, linter and formatter
+                "tamasfe.even-better-toml"
+            ]
+        }
+    }
+}

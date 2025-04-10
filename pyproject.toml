@@ -1,0 +1,81 @@
+[project]
+dynamic = ["version"]
+name = "PROJECTNAME"
+description = "PROJECTDESC."
+authors = [
+    { name = "Guillem Marpons Ucero", email = "guillem.marpons@aiguasol.coop" },
+]
+requires-python = ">=3.13"
+dependencies = [
+    "faker>=37.1.0",
+    "fastapi[standard]>=0.115.11",
+    "optional-faker>=2.1.0",
+    "psycopg>=3.2.6",
+    "pydantic-settings>=2.8.1",
+    "pyjwt[crypto]>=2.10.1",
+    "python-dotenv>=1.0.1",
+    "sqlmodel>=0.0.24",
+]
+
+[project.scripts]
+PROJECTNAME = "app.main_alt:main"  # Run the API service without executables fastapi or uvicorn
+settings = "app.settings:main"  # Generate default values for configuration variables
+db_run_sql_files = "scripts.db_run_sql_files:main"  # Run .sql files on the database cluster
+
+[dependency-groups]
+dev = [
+    "citext>=0.1.0",
+    "gitpython>=3.1.44",
+    "httpx>=0.28.1",
+    "pre-commit>=4.1.0",
+    "pytest>=8.3.4",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.9.3",
+    "sqlacodegen[citext]>=3.0.0"
+]
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.coverage.run]
+omit = ["src/scripts/*", "tests/*"]
+
+[tool.hatch.build.targets.wheel]
+sources = ["src"]
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/app/_version.py"
+
+[tool.pyright]
+include = ["src", "tests"]
+exclude = ["**/__pycache__"]
+ignore = ["src/app/_version.py"]
+typeCheckingMode = "strict"
+deprecateTypingAliases = true
+enableReachabilityAnalysis = true
+strictDictionaryInference = true
+strictListInference = true
+strictSetInference = true
+reportDeprecated = false
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "."]
+
+[tool.ruff]
+line-length = 100
+src = ["src"]
+
+[tool.ruff.lint]
+extend-select = ["E501"] # `line-too-long` rule
+
+[tool.uv]
+# Enable to trade longer installation times for faster start times (useful when deploying):
+compile-bytecode = false
+# To avoid uv complaining if it cannot create cross-filesystem links (e.g., when on Docker):
+link-mode = "copy"
+# We prefer to download Python ourselves:
+python-downloads = "never"

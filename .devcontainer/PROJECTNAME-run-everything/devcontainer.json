@@ -1,0 +1,83 @@
+// Devcontainer environment with all the containers needed for testing (both automatic and
+// interactive) and other development tasks.
+// For format details, see https://containers.dev/guide/dockerfile#docker-compose-image. For config
+// options, see the README at: https://github.com/devcontainers/templates/tree/main/src/python
+{
+    "name": "PROJECTNAME-run-everything",
+    "dockerComposeFile": "docker-compose.yml",
+    "service": "devcontainer",
+    "workspaceFolder": "/workspaces/PROJECTNAME",
+    "features": {
+        // docker-outside-of-docker: to access a testcontainer run on the host machine.
+        "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
+        "ghcr.io/gvatsal60/dev-container-features/pre-commit:1": {},
+        "ghcr.io/va-h/devcontainers-features/uv:1": {},
+        "ghcr.io/guiyomh/features/just:0": {},
+        "ghcr.io/robbert229/devcontainer-features/postgresql-client:1": {
+            "version": "17"
+        }
+    },
+    // Run in local machine, before each start. Useful, for example, to run docker network commands.
+    // "initializeCommand": "",
+    "postCreateCommand": "uv sync",
+    // Run after the container starts. We only need to install the git pre-commit hooks once, but we
+    // put it here so nobody forgets. We follow
+    // https://www.kenmuse.com/blog/avoiding-dubious-ownership-in-dev-containers/ to fix a problem
+    // with git security:
+    "postStartCommand": "git config --global --add safe.directory ${containerWorkspaceFolder} && pre-commit install",
+    // Use 'forwardPorts' to make a list of ports inside the container available locally.
+    // "forwardPorts": [],
+    // Configure tool-specific properties.
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                // DBML formatter
+                "aflalo.dbml-formatter",
+                // Markdown preview that supports Markdown GitHub extensions
+                "bierner.github-markdown-preview",
+                // Ruff linter and formatter for Python
+                "charliermarsh.ruff",
+                // DB admin, similar to pgAdmin but integrated in VSCode
+                "dbcode.dbcode",
+                // DBML visualization
+                "bocovo.dbml-erd-visualizer",
+                // Line wrap for comments (ALT-Q)
+                "dnut.rewrap-revived",
+                // editorconfig.org
+                "editorconfig.editorconfig",
+                // Run commands when a file is saved
+                "emeraldwalk.RunOnSave",
+                // DBML syntax highlighter and SQL <-> DBML conversion
+                "matt-meyers.vscode-dbml",
+                // Git Graph
+                "mhutchie.git-graph",
+                // Dockerfile syntax highlighter, linter and formatter (and probably more)
+                "ms-azuretools.vscode-docker",
+                // DISABLED: we use ruff instead
+                "-ms-python.autopep8",
+                // DISABLED: we use pyright instead (integrated in pylance)
+                "-ms-python.mypy-type-checker",
+                // Whatever M$ thinks is good to develop in Python
+                "ms-python.python",
+                // Python intellisense by M$
+                "ms-python.vscode-pylance",
+                // Justfile syntax support for Visual Studio Code
+                "nefrob.vscode-just-syntax",
+                // Snippets for Python docstrings
+                "njpwerner.autodocstring",
+                // YAML syntax highlighter, linter and formatter
+                "redhat.vscode-yaml",
+                // SQL formatter
+                "renesaarsoo.sql-formatter-vsc",
+                // Spell checking for strings and comments in code
+                "streetsidesoftware.code-spell-checker",
+                // TOML syntax highlighter, linter and formatter
+                "tamasfe.even-better-toml",
+                // conventionalcommits.org, to clearly separate feat/fix/refactor
+                "vivaxy.vscode-conventional-commits"
+            ]
+        }
+    }
+    // Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.
+    // "remoteUser": "root"
+}
