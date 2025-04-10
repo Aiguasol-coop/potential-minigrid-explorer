@@ -1,18 +1,18 @@
 // Minimal dev environment with all you need to edit the files and run some code (but no database,
 // etc). It can be used to debug the "run-everything" environment.
 {
-    "name": "PROJECTNAME-minimal",
+    "name": "potential-minigrid-explorer-minimal",
     "image": "mcr.microsoft.com/devcontainers/python:1-3.13-bookworm",
     "runArgs": [
         "--name",
-        "PROJECTNAME-minimal"
+        "potential-minigrid-explorer-minimal"
     ],
     "features": {
         // docker-outside-of-docker: to access a testcontainer run on the host machine.
-        "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
-        "ghcr.io/gvatsal60/dev-container-features/pre-commit:1": {},
-        "ghcr.io/va-h/devcontainers-features/uv:1": {},
-        "ghcr.io/guiyomh/features/just:0": {},
+        "ghcr.io/devcontainers/features/docker-outside-of-docker:1": { },
+        "ghcr.io/gvatsal60/dev-container-features/pre-commit:1": { },
+        "ghcr.io/va-h/devcontainers-features/uv:1": { },
+        "ghcr.io/guiyomh/features/just:0": { },
         "ghcr.io/robbert229/devcontainer-features/postgresql-client:1": {
             "version": "17"
         }

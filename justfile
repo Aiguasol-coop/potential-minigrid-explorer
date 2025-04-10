@@ -30,7 +30,7 @@ dev:
     uv run fastapi dev src/app/main.py
 
 # Alternatives to the above command:
-# - uv run PROJECTNAME
+# - uv run potential-minigrid-explorer
 # - python -m app.main_alt
 # - uv run uvicorn app.main:api --reload     # This one fails to find the favicon
 

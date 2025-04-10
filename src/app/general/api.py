@@ -8,7 +8,7 @@ router = fastapi.APIRouter()
 
 @router.get("/")
 async def root():
-    return {"message": "Hello from the PROJECTNAME API service!"}
+    return {"message": "Hello from the potential-minigrid-explorer API service!"}
 
 
 @router.get("/version")

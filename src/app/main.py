@@ -35,8 +35,8 @@ api.include_router(general.router, prefix="", tags=[Tags.general])
 
 ### Metadata for OpenAPI documentation #############################################################
 
-api.title = "PROJECTNAME API"
-api.description = "PROJECTDESC"
+api.title = "Potential Minigrid Explorer API"
+api.description = "Potential minigrid explorer, to be used in combination with the offgridplanner."
 api.version = ".".join([str(app._version.version_tuple[0]), str(app._version.version_tuple[1])])
 
 
