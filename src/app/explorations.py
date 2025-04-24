@@ -13,11 +13,8 @@ import sqlmodel
 ###   MODELS AND DB ENTITIES   #####################################################################
 ####################################################################################################
 
-### This section contains all the SQLModels used to define either API schemas or database tables.
-### The OpenAPI metadata for the public schemas also belongs here.
 
-
-class SimulationParameters(sqlmodel.SQLModel):
+class ExplorationParameters(sqlmodel.SQLModel):
     consumer_count_min: int = sqlmodel.Field(gt=0, default=30)
 
     consumer_count_max: int = sqlmodel.Field(gt=0, default=300)
@@ -44,11 +41,11 @@ class SimulationParameters(sqlmodel.SQLModel):
         return self
 
 
-class SimulationNewResult(sqlmodel.SQLModel):
+class ExplorationNewResult(sqlmodel.SQLModel):
     id: pydantic.UUID4  # UUID4 is completely random, and this is what we want here.
 
 
-class SimulationEstimationResult(sqlmodel.SQLModel):
+class ExplorationEstimationResult(sqlmodel.SQLModel):
     minigrid_count: int
     duration: datetime.timedelta
 
@@ -68,71 +65,70 @@ class ProjectDescriptor(sqlmodel.SQLModel):
     # TODO: coordinates, in a PostGIS or offgridplanner compatible format.
 
 
-class SimulationRunning(sqlmodel.SQLModel):
+class ExplorationRunning(sqlmodel.SQLModel):
     starting_time: datetime.datetime
     cluster_count: int
     minigrid_count: int
 
 
-class SimulationFinished(sqlmodel.SQLModel):
+class ExplorationFinished(sqlmodel.SQLModel):
     starting_time: datetime.datetime
     duration: datetime.timedelta
     cluster_count: int
     minigrid_count: int
-    simulation_result: list[ProjectDescriptor]
+    exploration_result: list[ProjectDescriptor]
 
 
-# TODO: simulation cancelled
+# TODO: exploration cancelled
 
 
-class SimulationFailed(sqlmodel.SQLModel):
+class ExplorationFailed(sqlmodel.SQLModel):
     starting_time: datetime.datetime
     duration: datetime.timedelta
     error_message: str
 
 
-type SimulationProgress = SimulationRunning | SimulationFinished | SimulationFailed
+type ExplorationProgress = ExplorationRunning | ExplorationFinished | ExplorationFailed
 
 
 ####################################################################################################
 ###   FASTAPI PATH OPERATIONS   ####################################################################
 ####################################################################################################
 
-### Aka routes, aka endpoints, aka api handlers.
 
 router = fastapi.APIRouter()
 
 
 @router.post("/new", status_code=fastapi.status.HTTP_201_CREATED)
-def start_new_simulation(parameters: SimulationParameters) -> SimulationNewResult:
+def start_new_exploration(parameters: ExplorationParameters) -> ExplorationNewResult:
     # TODO: send job to the queue.
 
-    result = SimulationNewResult(id=uuid.uuid4())
+    result = ExplorationNewResult(id=uuid.uuid4())
 
     return result
 
 
-@router.get("/{simulation_id}/estimation")
-def get_simulation_estimation(id: pydantic.UUID4) -> SimulationEstimationResult:
+@router.get("/{exploration_id}/estimation")
+def get_exploration_estimation(id: pydantic.UUID4) -> ExplorationEstimationResult:
     # TODO: put some meaningful value here
-    result = SimulationEstimationResult(minigrid_count=0, duration=datetime.timedelta(0))
+    result = ExplorationEstimationResult(minigrid_count=0, duration=datetime.timedelta(0))
 
     return result
 
 
-@router.get("/{simulation_id}/progress")
-def get_simulation_progress(id: pydantic.UUID4) -> SimulationProgress:
-    # TODO: check simulation status
+@router.get("/{exploration_id}/progress")
+def get_exploration_progress(id: pydantic.UUID4) -> ExplorationProgress:
+    # TODO: check exploration status
 
-    result = SimulationRunning(
+    result = ExplorationRunning(
         starting_time=datetime.datetime.now(), cluster_count=0, minigrid_count=0
     )
 
     return result
 
 
-@router.delete("/{simulation_id}")
-def cancel_simulation(id: pydantic.UUID4):
-    result = SimulationNewResult(id=uuid.uuid4())
+@router.delete("/{exploration_id}")
+def cancel_exploration(id: pydantic.UUID4):
+    result = ExplorationNewResult(id=uuid.uuid4())
 
     return result

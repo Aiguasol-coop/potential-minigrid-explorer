@@ -6,12 +6,10 @@ import sqlmodel
 
 from enum import Enum
 
+
 ####################################################################################################
 ###   MODELS AND DB ENTITIES   #####################################################################
 ####################################################################################################
-
-### This section contains all the SQLModels used to define either API schemas or database tables.
-### The OpenAPI metadata for the public schemas also belongs here.
 
 
 class ProjectStatus(Enum):
@@ -35,7 +33,6 @@ class PotentialProject(sqlmodel.SQLModel):
 ###   FASTAPI PATH OPERATIONS   ####################################################################
 ####################################################################################################
 
-### Aka routes, aka endpoints, aka api handlers.
 
 router = fastapi.APIRouter()
 

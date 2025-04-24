@@ -18,7 +18,7 @@ import fastapi.middleware.cors
 import app._version
 import app.general.api as general
 import app.projects as projects
-import app.simulations as simulations
+import app.explorations as explorations
 
 
 api = fastapi.FastAPI(lifespan=lambda app: startup_and_shutdown(app))
@@ -30,23 +30,29 @@ This can be run using either the ``fastapi`` executable or the ``uvicorn`` execu
 
 class Tags(Enum):
     general = "general"
-    simulations = "simulations"
+    explorations = "explorations"
     projects = "projects"
 
 
 api.include_router(general.router, prefix="", tags=[Tags.general])
-api.include_router(simulations.router, prefix="/simulations", tags=[Tags.simulations])
+api.include_router(explorations.router, prefix="/explorations", tags=[Tags.explorations])
 api.include_router(projects.router, prefix="/projects", tags=[Tags.projects])
 
 
+####################################################################################################
 ### Metadata for OpenAPI documentation #############################################################
+####################################################################################################
+
 
 api.title = "Potential Minigrid Explorer API"
 api.description = "Potential minigrid explorer, to be used in combination with the offgridplanner."
 api.version = ".".join([str(app._version.version_tuple[0]), str(app._version.version_tuple[1])])
 
 
+####################################################################################################
 ### API middlewares ################################################################################
+####################################################################################################
+
 
 api.add_middleware(
     fastapi.middleware.cors.CORSMiddleware,
