@@ -127,7 +127,9 @@ class GridDescriptor(pydantic.BaseModel):
 
 
 class GridDescriptorNodesEncoded(pydantic.BaseModel):
-    nodes: str  # JSON-encoded NodeAttributes
+    nodes: str
+    """JSON-encoded NodeAttributes."""
+
     grid_design: GridDesign
     yearly_demand: float
 
@@ -155,5 +157,75 @@ if __name__ == "__main__":
     grid_updated = grid.model_copy(
         update={"grid_design": grid.grid_design.model_copy(update={"pole": new_grid_design_pole})}
     )
+    print(f"grid_updated: {grid_updated}")
 
-    print(grid_updated)
+    # Example of creating a list of nodes from the ground up:
+    node_1 = {
+        "latitude": 40.6,
+        "longitude": 0.323,
+        "how_added": HowAdded.manual,
+        "node_type": NodeType.consumer,
+        "consumer_type": ConsumerType.household,
+        "custom_specification": "",
+        "shs_options": 0,
+        "consumer_detail": ConsumerDetail.default,
+        "is_connected": False,
+    }
+    node_2 = {
+        "latitude": 40.59,
+        "longitude": 0.339,
+        "how_added": HowAdded.manual,
+        "node_type": NodeType.power_house,
+        "consumer_type": ConsumerType.na,
+        "custom_specification": "",
+        "shs_options": 0,
+        "consumer_detail": ConsumerDetail.na,
+        "is_connected": False,
+    }
+    node_dicts = [node_1, node_2]
+    nodes: NodeAttributes = NodeAttributes(
+        latitude={i: node_dicts[i]["latitude"] for i in range(len(node_dicts))},  # type: ignore
+        longitude={i: node_dicts[i]["longitude"] for i in range(len(node_dicts))},  # type: ignore
+        how_added={i: node_dicts[i]["how_added"] for i in range(len(node_dicts))},  # type: ignore
+        node_type={i: node_dicts[i]["node_type"] for i in range(len(node_dicts))},  # type: ignore
+        consumer_type={i: node_dicts[i]["consumer_type"] for i in range(len(node_dicts))},  # type: ignore
+        custom_specification={
+            i: node_dicts[i]["custom_specification"]
+            for i in range(len(node_dicts))  # type: ignore
+        },
+        shs_options={i: node_dicts[i]["shs_options"] for i in range(len(node_dicts))},  # type: ignore
+        consumer_detail={i: node_dicts[i]["consumer_detail"] for i in range(len(node_dicts))},  # type: ignore
+        is_connected={i: node_dicts[i]["is_connected"] for i in range(len(node_dicts))},  # type: ignore
+    )
+    print(f"nodes: {nodes}")
+
+    # Another option is to use pandas:
+    import pandas as pd
+
+    df = pd.DataFrame(
+        {
+            "latitude": [10.5, 10.7],
+            "longitude": [20.1, 20.3],
+            "how_added": ["automatic", "k-means"],
+            "node_type": ["consumer", "pole"],
+            "consumer_type": ["household", "n.a."],
+            "custom_specification": ["none", "break-pole"],
+            "shs_options": [0, 2],
+            "consumer_detail": ["default", "n.a."],
+            "is_connected": [True, False],
+            "distance_to_load_center": [1.5, 2.3],
+            "parent": [None, "0"],
+            "distribution_cost": [10.0, 15.0],
+        },
+        index=[0, 1],  # node IDs
+    )
+    df.index = df.index.astype(int)  # type: ignore # Ensure index is int
+    fields = {col: df[col].to_dict() for col in df.columns}  # type: ignore
+    nodes_alt = NodeAttributes(**fields)  # type: ignore
+    print(f"nodes_alt: {nodes_alt}")
+
+    # And we can replace the original nodes in the example from file and print it with nodes
+    # JSON-encoded:
+    grid_updated_alt = grid.model_copy(update={"nodes": nodes_alt})
+    grid_updated_alt_encoded = GridDescriptorNodesEncoded.from_grid_descriptor(grid_updated_alt)
+    print(f"grid_updated_alt as JSON: {grid_updated_alt_encoded.model_dump_json()}")

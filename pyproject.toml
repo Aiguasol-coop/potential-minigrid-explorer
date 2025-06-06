@@ -12,6 +12,7 @@ dependencies = [
     "geojson>=3.2.0",
     "geojson-pydantic>=2.0.0",
     "optional-faker>=2.1.0",
+    "pandas>=2.3.0",
     "psycopg>=3.2.6",
     "pydantic>=2.11.3",
     "pydantic-settings>=2.8.1",
