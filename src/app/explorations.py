@@ -1,5 +1,4 @@
 import datetime
-import typing
 import uuid
 
 import fastapi
@@ -15,17 +14,19 @@ import sqlmodel
 
 
 class ExplorationParameters(sqlmodel.SQLModel):
-    consumer_count_min: int = sqlmodel.Field(gt=0, default=30)
-
-    consumer_count_max: int = sqlmodel.Field(gt=0, default=300)
+    consumer_count_min: int = sqlmodel.Field(gt=30, default=100, le=500)
 
     diameter_max: float = sqlmodel.Field(
         gt=0.0,
-        default=2000,
-        description="""Maximum euclidean distance (meters) between two consumers.""",
+        default=5000.0,
+        le=10000.0,
+        description="""Euclidean distance (meters) between the two most distant consumers.""",
     )
 
-    distance_from_grid_min: float = sqlmodel.Field(ge=20000.0, default=20000.0)
+    distance_from_grid_min: float = sqlmodel.Field(ge=20000.0, default=60000.0, le=120000.0)
+    """Unit: meters."""
+
+    # distance_from_road_min: float = sqlmodel.Field()
 
     # cluster_count_goal: int | None = sqlmodel.Field(
     #     gt=0,
@@ -33,12 +34,6 @@ class ExplorationParameters(sqlmodel.SQLModel):
     #     description="""Number of minigrids we want as the result of the clustering, prior to
     #                 filtering out the ones not fulfilling other requirements.""",
     # )
-
-    @pydantic.model_validator(mode="after")
-    def check_consumer_count_range(self) -> typing.Self:
-        if self.consumer_count_min >= self.consumer_count_max:
-            raise ValueError("consumer_count_min should be smaller than consumer_count_max")
-        return self
 
 
 class ExplorationNewResult(sqlmodel.SQLModel):
