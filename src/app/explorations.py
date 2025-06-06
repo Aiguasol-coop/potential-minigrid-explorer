@@ -72,6 +72,7 @@ class MinigridStatus(str, enum.Enum):
     potential = "potential"
     planning = "planning"
     monitoring = "monitoring"
+    known_to_exist = "known_to_exist"
 
 
 class ExistingMinigrid(sqlmodel.SQLModel):
