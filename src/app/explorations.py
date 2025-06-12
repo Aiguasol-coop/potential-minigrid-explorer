@@ -23,6 +23,10 @@ class ExplorationParameters(sqlmodel.SQLModel):
     distance_from_grid_min: float = sqlmodel.Field(ge=20000.0, default=60000.0, le=120000.0)
     """Units: meter."""
 
+    match_distance_max: float = sqlmodel.Field(ge=100.0, default=5000.0, le=20000.0)
+    """Potential minigrids that are at this distance or less of an already existing minigrid are
+    filtered out. Units: meter."""
+
 
 class ExplorationNewResult(sqlmodel.SQLModel):
     id: pydantic.UUID4  # UUID4 is completely random, and this is what we want here.
