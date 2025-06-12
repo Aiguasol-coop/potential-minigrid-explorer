@@ -8,6 +8,9 @@ import geojson_pydantic as geopydantic
 import pydantic
 import sqlmodel
 
+import app.service_offgrid_planner.grid as grid
+import app.service_offgrid_planner.supply as supply
+
 
 ####################################################################################################
 ###   MODELS AND DB ENTITIES   #####################################################################
@@ -91,6 +94,7 @@ class ExplorationRunning(sqlmodel.SQLModel):
     starting_time: datetime.datetime
     cluster_count: int
     minigrid_count: int
+    exploration_result: list[PotentialMinigrid]
 
 
 class ExplorationFinished(sqlmodel.SQLModel):
@@ -99,9 +103,6 @@ class ExplorationFinished(sqlmodel.SQLModel):
     cluster_count: int
     minigrid_count: int
     exploration_result: list[PotentialMinigrid]
-
-
-# TODO: exploration cancelled
 
 
 class ExplorationFailed(sqlmodel.SQLModel):
@@ -113,6 +114,10 @@ class ExplorationFailed(sqlmodel.SQLModel):
 type ExplorationProgress = ExplorationRunning | ExplorationFinished | ExplorationFailed
 
 
+class ResponseOk(pydantic.BaseModel):
+    message: str = "Ok"
+
+
 ####################################################################################################
 ###   FASTAPI PATH OPERATIONS   ####################################################################
 ####################################################################################################
@@ -121,12 +126,12 @@ type ExplorationProgress = ExplorationRunning | ExplorationFinished | Exploratio
 router = fastapi.APIRouter()
 
 
-@router.post("/existing_minigrids")
+@router.post("/existing")
 def notify_existing_minigrids(minigrids: list[ExistingMinigrid]) -> None:
     pass
 
 
-@router.post("/new", status_code=fastapi.status.HTTP_201_CREATED)
+@router.post("/", status_code=fastapi.status.HTTP_201_CREATED)
 def start_new_exploration(parameters: ExplorationParameters) -> ExplorationNewResult:
     # TODO: send job to the queue.
 
@@ -136,7 +141,7 @@ def start_new_exploration(parameters: ExplorationParameters) -> ExplorationNewRe
 
 
 @router.get("/{exploration_id}/estimation")
-def get_exploration_estimation(id: pydantic.UUID4) -> ExplorationEstimationResult:
+def get_exploration_estimation(exploration_id: pydantic.UUID4) -> ExplorationEstimationResult:
     # TODO: put some meaningful value here
     result = ExplorationEstimationResult(minigrid_count=0, duration=datetime.timedelta(0))
 
@@ -144,7 +149,7 @@ def get_exploration_estimation(id: pydantic.UUID4) -> ExplorationEstimationResul
 
 
 @router.get("/{exploration_id}/progress")
-def get_exploration_progress(id: pydantic.UUID4) -> ExplorationProgress:
+def get_exploration_progress(exploration_id: pydantic.UUID4, offset: int) -> ExplorationProgress:
     # TODO: check exploration status
 
     result = ExplorationRunning(
@@ -154,8 +159,22 @@ def get_exploration_progress(id: pydantic.UUID4) -> ExplorationProgress:
     return result
 
 
-@router.delete("/{exploration_id}")
-def cancel_exploration(id: pydantic.UUID4):
-    result = ExplorationNewResult(id=uuid.uuid4())
+@router.get("/{exploration_id}/minigrids/{grid_id}/supply")
+def get_exploration_supply(
+    exploration_id: pydantic.UUID4, grid_id: pydantic.UUID4
+) -> supply.SupplyDescriptor:
+    pass
 
-    return result
+
+@router.get("/{exploration_id}/minigrids/{grid_id}/grid")
+def get_exploration_grid(
+    exploration_id: pydantic.UUID4, grid_id: pydantic.UUID4
+) -> grid.GridDescriptor:
+    pass
+
+
+@router.post("/{exploration_id}/stop")
+def stop_exploration(id: pydantic.UUID4) -> ResponseOk:
+    pass
+
+    return ResponseOk()
