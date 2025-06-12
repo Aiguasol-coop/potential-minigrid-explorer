@@ -97,21 +97,21 @@ class ExplorationRunning(sqlmodel.SQLModel):
     exploration_result: list[PotentialMinigrid]
 
 
-class ExplorationFinished(sqlmodel.SQLModel):
+class ExplorationStatus(str, enum.Enum):
+    RUNNING = "RUNNING"
+    STOPPED = "STOPPED"
+    FINISHED = "FINISHED"
+    FAILED = "FAILED"
+
+
+class ExplorationResult(sqlmodel.SQLModel):
+    status: ExplorationStatus
     starting_time: datetime.datetime
     duration: datetime.timedelta
-    cluster_count: int
-    minigrid_count: int
-    exploration_result: list[PotentialMinigrid]
-
-
-class ExplorationFailed(sqlmodel.SQLModel):
-    starting_time: datetime.datetime
-    duration: datetime.timedelta
-    error_message: str
-
-
-type ExplorationProgress = ExplorationRunning | ExplorationFinished | ExplorationFailed
+    clusters_found: int
+    minigrids_found: int
+    minigrids_analyzed: int
+    minigrids: list[PotentialMinigrid]
 
 
 class ResponseOk(pydantic.BaseModel):
@@ -148,15 +148,15 @@ def get_exploration_estimation(exploration_id: pydantic.UUID4) -> ExplorationEst
     return result
 
 
-@router.get("/{exploration_id}/progress")
-def get_exploration_progress(exploration_id: pydantic.UUID4, offset: int) -> ExplorationProgress:
+@router.get("/{exploration_id}")
+def get_exploration_progress(exploration_id: pydantic.UUID4, offset: int) -> ExplorationResult:
+    """This endpoint is meant to be polled on.
+
+    The offset is on the list of returned analyzed minigrids.
+    """
     # TODO: check exploration status
 
-    result = ExplorationRunning(
-        starting_time=datetime.datetime.now(), cluster_count=0, minigrid_count=0
-    )
-
-    return result
+    pass
 
 
 @router.get("/{exploration_id}/minigrids/{grid_id}/supply")
