@@ -9,8 +9,10 @@ requires-python = ">=3.13"
 dependencies = [
     "faker>=37.1.0",
     "fastapi[standard]>=0.115.11",
+    "geoalchemy2>=0.17.1",
     "geojson>=3.2.0",
     "geojson-pydantic>=2.0.0",
+    "geopandas>=1.1.0",
     "optional-faker>=2.1.0",
     "pandas>=2.3.0",
     "psycopg>=3.2.6",
@@ -19,8 +21,10 @@ dependencies = [
     "pyjwt[crypto]>=2.10.1",
     "python-dotenv>=1.0.1",
     "requests>=2.32.3",
+    "shapely>=2.1.1",
     "sqlmodel>=0.0.24",
     "test-client>=0.1",
+    "uuid6>=2025.0.0",
 ]
 
 [project.scripts]

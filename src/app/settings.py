@@ -35,6 +35,7 @@ class MainSettings(pydantic_settings.BaseSettings):
     db_port: int = 5432
     db_name: str = "test"
     db_superadmin_username: str = "postgres"
+    db_role_api_service_username: str = "api_service"
     db_locale: str = "es_ES.utf8"
     db_icu_locale: str = "es-ES-x-icu"
 
@@ -69,6 +70,7 @@ class Settings(MainSettings):
     # List of secrets:
     db_superadmin_password: str
     db_role_db_owner_password: str
+    db_role_api_service_password: str
 
     # This makes possible for the Settings class to automatically read secrets from files. Secret
     # files contain only a value, and the key is the filename:

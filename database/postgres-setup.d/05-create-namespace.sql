@@ -1,5 +1,6 @@
 \set db_name `echo $DB_NAME`
 \set db_role_db_owner_username :db_name
+\set db_role_api_service_username `echo $DB_ROLE_API_SERVICE_USERNAME`
 
 \connect :db_name
 
@@ -11,4 +12,8 @@ SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname = 'main') AS 
     CREATE SCHEMA main AUTHORIZATION :db_role_db_owner_username;
 \endif
 
-ALTER ROLE :db_role_db_owner_username SET search_path TO main;
+GRANT USAGE ON SCHEMA main TO :db_role_api_service_username;
+
+-- We need to keep schema 'public' in the search path because it's where PostGIS creates its types.
+ALTER ROLE :db_role_db_owner_username SET search_path TO main, public;
+ALTER ROLE :db_role_api_service_username SET search_path TO main, public;
