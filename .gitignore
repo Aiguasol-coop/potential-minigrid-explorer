@@ -178,3 +178,5 @@ src/app/_version.py
 typings/
 secrets/
 database/sandbox/
+
+raw_data
