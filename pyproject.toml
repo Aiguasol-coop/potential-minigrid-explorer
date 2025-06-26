@@ -34,13 +34,14 @@ db_run_sql_files = "scripts.db_run_sql_files:main"  # Run .sql files on the data
 
 [dependency-groups]
 dev = [
+    "datamodel-code-generator>=0.31.2",
     "gitpython>=3.1.44",
     "httpx>=0.28.1",
     "pre-commit>=4.1.0",
     "pytest>=8.3.4",
     "pytest-cov>=6.0.0",
     "ruff>=0.9.3",
-    "sqlacodegen[citext]>=3.0.0"
+    "sqlacodegen[citext]>=3.0.0",
 ]
 
 [build-system]

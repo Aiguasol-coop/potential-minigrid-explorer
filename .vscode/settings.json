@@ -1,5 +1,5 @@
 {
-    "json.format.keepLines": true,
+    "json.format.keepLines": false,
     "git.inputValidationLength": 100,
     "git.inputValidationSubjectLength": null,
     "ruff.trace.server": "messages",
