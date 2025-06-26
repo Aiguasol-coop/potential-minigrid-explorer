@@ -84,7 +84,7 @@ services:
       - ../../database/postgres-setup.d:/docker-entrypoint-initdb.d:ro
       - db_automatic_volume:/var/lib/postgresql/data
     ports:
-      - "65432:5432"
+      - "54321:5432"
 
   pgadmin:
     image: dpage/pgadmin4:8
@@ -97,7 +97,7 @@ services:
       PGADMIN_DEFAULT_PASSWORD: test
       PGADMIN_LISTEN_PORT: 80
     ports:
-      - "8080:80" # Access via localhost:8080 on host machine
+      - "8082:80" # Access via localhost:8080 on host machine
     volumes:
       - pgadmin_data:/var/lib/pgadmin
       - ../../tests/pgadmin_config/servers.json:/pgadmin4/servers.json:ro

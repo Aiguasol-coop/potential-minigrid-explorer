@@ -7,6 +7,19 @@ set script-interpreter := ['uv', 'run', '--script']
 default:
     just --list
 
+[group('models')]
+gen-model grid_or_supply input_or_output:
+    datamodel-codegen \
+      --input-file-type jsonschema \
+      --url https://optimizer-offgridplanner-app.apps2.rl-institut.de/schema/{{grid_or_supply}}/{{input_or_output}} \
+      --output-model-type pydantic_v2.BaseModel \
+      --field-constraints \
+      --use-standard-collections \
+      --use-subclass-enum \
+      --use-union-operator \
+      --use-schema-description
+
+
 [group('database')]
 psql-superadmin:
     PGPASSWORD=`cat /run/secrets/db_superadmin_password` psql -h $DB_HOST -U $DB_SUPERADMIN_USERNAME
