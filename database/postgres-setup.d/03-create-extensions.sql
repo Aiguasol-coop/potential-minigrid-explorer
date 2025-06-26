@@ -4,3 +4,5 @@
 
 -- Extension for case independent text
 CREATE EXTENSION IF NOT EXISTS citext;
+
+CREATE EXTENSION IF NOT EXISTS postgis;

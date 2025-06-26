@@ -17,8 +17,7 @@ import fastapi.middleware.cors
 
 import app._version
 import app.general.api as general
-import app.projects as projects
-import app.explorations as explorations
+import app.explorations.api as explorations
 
 
 api = fastapi.FastAPI(lifespan=lambda app: startup_and_shutdown(app))
@@ -36,7 +35,6 @@ class Tags(Enum):
 
 api.include_router(general.router, prefix="", tags=[Tags.general])
 api.include_router(explorations.router, prefix="/explorations", tags=[Tags.explorations])
-api.include_router(projects.router, prefix="/projects", tags=[Tags.projects])
 
 
 ####################################################################################################
