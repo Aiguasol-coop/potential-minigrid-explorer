@@ -10,12 +10,14 @@ import sqlmodel
 import geoalchemy2
 import shapely
 import sqlalchemy
+import random
 
 # import app.service_offgrid_planner.grid as grid
 # import app.service_offgrid_planner.supply as supply
 import app.shared.geography as geography
 import app.db.core as db
 import app.utils as utils
+import app.potential_engine as engine
 
 import scripts.generators.populate_db as populate_db
 
@@ -41,26 +43,8 @@ class PotentialProject(sqlmodel.SQLModel):
     # TODO: Define list of "inputs" and "outputs/results" equal to RLI models
 
 
-class ExplorationParameters(sqlmodel.SQLModel):
-    consumer_count_min: int = sqlmodel.Field(gt=30, default=100, le=500)
-
-    diameter_max: float = sqlmodel.Field(gt=0.0, default=5000.0, le=10000.0)
-    """Euclidean distance (units: meter) between the two most distant consumers."""
-
-    distance_from_grid_min: float = sqlmodel.Field(ge=20000.0, default=60000.0, le=120000.0)
-    """Units: meter."""
-
-    match_distance_max: float = sqlmodel.Field(ge=100.0, default=5000.0, le=20000.0)
-    """Potential minigrids that are at this distance or less of an already existing minigrid are
-    filtered out. Units: meter."""
-
-
-class ExplorationNewResult(sqlmodel.SQLModel):
-    id: pydantic.UUID4  # UUID4 is completely random, and this is what we want here.
-
-
 class ExplorationEstimationResult(sqlmodel.SQLModel):
-    minigrid_count: int
+    num_of_minigrids: int
     duration: datetime.timedelta
 
 
@@ -111,6 +95,12 @@ class ExistingMinigrid(sqlmodel.SQLModel):
     centroid: geopydantic.Point
 
 
+class GridDistributionLineResponse(
+    populate_db.GridDistributionLineBase, geography.HasLinestringAttribute
+):
+    geography: geopydantic.LineString
+
+
 class ExplorationRunning(sqlmodel.SQLModel):
     starting_time: datetime.datetime
     cluster_count: int
@@ -146,7 +136,23 @@ class ResponseOk(pydantic.BaseModel):
 
 router = fastapi.APIRouter()
 
-# TODO: Add get grid lines and roads endpoints.
+
+@router.get("/grid")
+def get_grid_network(db: db.Session) -> list[GridDistributionLineResponse]:
+    grid_network = db.exec(sqlmodel.select(populate_db.GridDistributionLine)).all()
+
+    if not grid_network:
+        raise fastapi.HTTPException(
+            status_code=fastapi.status.HTTP_404_NOT_FOUND, detail="No grid network found."
+        )
+
+    return grid_network
+
+
+# TODO: Add get roads endpoints.
+@router.get("/roads")
+def get_country_roads(db: db.Session):
+    return
 
 
 @router.get("/existing")
@@ -226,18 +232,21 @@ def notify_existing_minigrids(db: db.Session, minigrid: ExistingMinigrid) -> uti
 
 
 @router.post("/", status_code=fastapi.status.HTTP_201_CREATED)
-def start_new_exploration(parameters: ExplorationParameters) -> ExplorationNewResult:
-    # TODO: send job to the queue.
+def start_new_exploration(
+    db: db.Session, parameters: engine.ExplorationParameters
+) -> engine.ExplorationNewResult:
+    id = engine.perform_search(db=db, parameters=parameters)
 
-    result = ExplorationNewResult(id=uuid.uuid4())
-
-    return result
+    return id
 
 
 @router.get("/{exploration_id}/estimation")
-def get_exploration_estimation(exploration_id: pydantic.UUID4) -> ExplorationEstimationResult:
+def get_exploration_estimation(exploration_id: pydantic.UUID6) -> ExplorationEstimationResult:
     # TODO: put some meaningful value here
-    result = ExplorationEstimationResult(minigrid_count=0, duration=datetime.timedelta(0))
+    result = ExplorationEstimationResult(
+        num_of_minigrids=random.randint(40, 90),
+        duration=datetime.timedelta(random.randint(10, 120)),
+    )
 
     return result
 

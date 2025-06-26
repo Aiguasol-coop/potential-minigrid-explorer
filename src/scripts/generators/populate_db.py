@@ -14,7 +14,6 @@ import app.shared.geography as geography
 
 
 class GridDistributionLineBase(sqlmodel.SQLModel):
-    id_shp: float | None = None
     status: str | None = None
     vltg_kv: float | None = None
     classes: str | None = None
@@ -28,6 +27,8 @@ class GridDistributionLine(GridDistributionLineBase, geography.HasLinestringColu
     id: str | None = sqlmodel.Field(
         default_factory=lambda: str(uuid6.uuid7()), primary_key=True, index=True
     )
+
+    id_shp: float | None = None
 
     pg_geography: str = sqlmodel.Field(
         default=None,
@@ -245,9 +246,9 @@ def clean_building_centroids(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         "surface",
     ]
 
-    gdf_clean["pg_geography_centroid"] = gdf_clean["geometry"].apply(
-        lambda geom: geom.wkt if geom else None
-    )  # type: ignore
+    gdf_clean["pg_geography_centroid"] = gdf_clean["geometry"].apply(  # type: ignore
+        lambda geom: geom.wkt if geom else None  # type: ignore
+    )
     gdf_clean = gdf_clean.drop(columns="geometry")
 
     for col in ["distance_to_grid", "electric_demand", "surface"]:
@@ -295,9 +296,9 @@ def populate_db(db_session: sqlmodel.Session) -> None:
                     gpd.read_file(os.path.join(raw, "polygons_buildings_20km.shp"))  # type: ignore
                 )
 
-                merged = pd.merge(
+                merged = pd.merge(  # type: ignore
                     cent, poly, on="id_shp", how="outer", suffixes=("", "_poly")
-                ).replace({np.nan: None})  # type: ignore
+                ).replace({np.nan: None})
 
                 objs = [model(**rec) for rec in merged.to_dict("records")]  # type: ignore
                 db_session.bulk_save_objects(objs)  # type: ignore
