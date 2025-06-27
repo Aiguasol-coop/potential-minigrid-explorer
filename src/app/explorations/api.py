@@ -1,25 +1,29 @@
 import datetime
 import decimal
 import enum
+import random
 import uuid
 
 import fastapi
+import geoalchemy2
 import geojson_pydantic as geopydantic
 import pydantic
-import sqlmodel
-import geoalchemy2
-import shapely
 import sqlalchemy
-import random
+import sqlmodel
+import shapely
 
-# import app.service_offgrid_planner.grid as grid
-# import app.service_offgrid_planner.supply as supply
-import app.shared.geography as geography
 import app.db.core as db
+import app.grid.domain as grid
+import app.shared.geography as geography
 import app.utils as utils
-import app.potential_engine as engine
 
-import scripts.generators.populate_db as populate_db
+from app.explorations.domain import (
+    ExplorationError,
+    ExplorationParameters,
+    ExplorationId,
+    start_exploration,
+)
+
 
 ####################################################################################################
 ###   MODELS AND DB ENTITIES   #####################################################################
@@ -85,7 +89,7 @@ class PotentialMinigrid(sqlmodel.SQLModel):
 
 class ExistingMinigrid(sqlmodel.SQLModel):
     id: pydantic.UUID7
-    status: populate_db.MinigridStatus
+    status: grid.MinigridStatus
     name: str | None = None
     operator: str | None = None
     pv_capacity: float | None = None
@@ -95,9 +99,7 @@ class ExistingMinigrid(sqlmodel.SQLModel):
     centroid: geopydantic.Point
 
 
-class GridDistributionLineResponse(
-    populate_db.GridDistributionLineBase, geography.HasLinestringAttribute
-):
+class GridDistributionLineResponse(grid.GridDistributionLineBase, geography.HasLinestringAttribute):
     geography: geopydantic.LineString
 
 
@@ -132,7 +134,7 @@ router = fastapi.APIRouter()
 
 @router.get("/grid")
 def get_grid_network(db: db.Session) -> list[GridDistributionLineResponse]:
-    grid_network = db.exec(sqlmodel.select(populate_db.GridDistributionLine)).all()
+    grid_network = db.exec(sqlmodel.select(grid.GridDistributionLine)).all()
 
     if not grid_network:
         raise fastapi.HTTPException(
@@ -152,7 +154,7 @@ def get_country_roads(db: db.Session):
 def get_existing_minigrids(
     db: db.Session,
 ) -> list[ExistingMinigrid]:
-    db_existing_minigrids = db.exec(sqlmodel.select(populate_db.MiniGrid)).all()
+    db_existing_minigrids = db.exec(sqlmodel.select(grid.MiniGrid)).all()
 
     if not db_existing_minigrids:
         raise fastapi.HTTPException(
@@ -191,8 +193,8 @@ def notify_existing_minigrids(db: db.Session, minigrid: ExistingMinigrid) -> uti
 
     tol_meters = 1.0
     existing = db.exec(
-        sqlmodel.select(populate_db.MiniGrid).where(
-            sqlalchemy.func.ST_DWithin(populate_db.MiniGrid.pg_geography, pt, tol_meters)
+        sqlmodel.select(grid.MiniGrid).where(
+            sqlalchemy.func.ST_DWithin(grid.MiniGrid.pg_geography, pt, tol_meters)
         )
     ).first()
 
@@ -201,10 +203,10 @@ def notify_existing_minigrids(db: db.Session, minigrid: ExistingMinigrid) -> uti
             status_code=409, detail=f"Minigrid at same location already exists (id={existing.id})."
         )
 
-    db_minigrid = populate_db.MiniGrid(
+    db_minigrid = grid.MiniGrid(
         id=str(minigrid.id),
         name=minigrid.name,
-        status=populate_db.MinigridStatus(minigrid.status.value),
+        status=grid.MinigridStatus(minigrid.status.value),
         operator=minigrid.operator,
         pv_power=minigrid.pv_capacity,
         estimated_power=minigrid.pv_estimated,
@@ -225,10 +227,11 @@ def notify_existing_minigrids(db: db.Session, minigrid: ExistingMinigrid) -> uti
 
 
 @router.post("/", status_code=fastapi.status.HTTP_201_CREATED)
-def start_new_exploration(
-    db: db.Session, parameters: engine.ExplorationParameters
-) -> engine.ExplorationNewResult:
-    id = engine.perform_search(db=db, parameters=parameters)
+def start_new_exploration(db: db.Session, parameters: ExplorationParameters) -> ExplorationId:
+    id = start_exploration(db=db, parameters=parameters)
+    if isinstance(id, ExplorationError):
+        # TODO: raise HTTP error
+        pass
 
     return id
 
