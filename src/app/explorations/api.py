@@ -101,13 +101,6 @@ class GridDistributionLineResponse(
     geography: geopydantic.LineString
 
 
-class ExplorationRunning(sqlmodel.SQLModel):
-    starting_time: datetime.datetime
-    cluster_count: int
-    minigrid_count: int
-    exploration_result: list[PotentialMinigrid]
-
-
 class ExplorationStatus(str, enum.Enum):
     RUNNING = "RUNNING"
     STOPPED = "STOPPED"
