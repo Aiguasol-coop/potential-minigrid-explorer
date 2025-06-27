@@ -9,13 +9,15 @@ x-environment: &global_env
   DB_LOCALE: en_US.utf8
   DB_ICU_LOCALE: en-US-x-icu
 
+  SERVICE_OFFGRID_PLANNER_URL: https://optimizer-offgridplanner-app.apps2.rl-institut.de
+
 services:
   env-starter:
     image: alpine
     platform: linux/amd64
     restart: no
     healthcheck:
-      test: "[ -f /run/secrets/db_superadmin_password ] && [ -f /workspaces/potential-minigrid-explorer/.env ]"
+      test: "[ -f /run/secrets/db_superadmin_password ]"
       interval: 1s
       retries: 5
       start_period: 0s
@@ -41,6 +43,8 @@ services:
     platform: linux/amd64
     depends_on:
       - env-starter
+    environment:
+      <<: *global_env
     volumes:
       - ../..:/workspaces/potential-minigrid-explorer:cached
       - secrets_volume:/run/secrets:ro

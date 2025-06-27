@@ -38,6 +38,7 @@ class MainSettings(pydantic_settings.BaseSettings):
     db_role_api_service_username: str = "api_service"
     db_locale: str = "es_ES.utf8"
     db_icu_locale: str = "es-ES-x-icu"
+    service_offgrid_planner_url: str
 
     # This makes possible for the MainSettings class to automatically read variables from a file.
     # Environment variables still take precedence.
