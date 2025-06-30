@@ -76,6 +76,9 @@ class Parameters(pydantic.BaseModel):
     max_load: float | None = None
     min_efficiency: float | None = None
     max_efficiency: float | None = None
+    capex: float | None = None
+    opex: float | None = None
+    lifetime: float | None = None
 
 
 class Component(pydantic.BaseModel):
@@ -102,7 +105,7 @@ class ScalarKey(str, enum.Enum):
     invest = "invest"
 
 
-class ResultKey(str, enum.Enum):
+class ResultKey(enum.StrEnum):
     battery_none = "battery__None"
     battery_electricity_dc = "battery__electricity_dc"
     diesel_genset_electricity_ac = "diesel_genset__electricity_ac"

@@ -93,12 +93,17 @@ def _send_input_to_optimizer(
     return checker
 
 
+type CheckerGrid = abc.Callable[[], OptimizerOutput[grid.GridResult] | ErrorServiceOffgridPlanner]
+
+
+type CheckerSupply = abc.Callable[
+    [], OptimizerOutput[supply.SupplyResult] | ErrorServiceOffgridPlanner
+]
+
+
 def optimize_grid(
     input: grid.GridInput,
-) -> (
-    abc.Callable[[], OptimizerOutput[grid.GridResult] | ErrorServiceOffgridPlanner]
-    | ErrorServiceOffgridPlanner
-):
+) -> CheckerGrid | ErrorServiceOffgridPlanner:
     """Returns a function to check the result (you can check repeatedly, until the optimization
     algorithm has finished)."""
 
@@ -109,10 +114,7 @@ def optimize_grid(
 
 def optimize_supply(
     input: supply.SupplyInput,
-) -> (
-    abc.Callable[[], OptimizerOutput[supply.SupplyResult] | ErrorServiceOffgridPlanner]
-    | ErrorServiceOffgridPlanner
-):
+) -> CheckerSupply | ErrorServiceOffgridPlanner:
     """Returns a function to check the result (you can check repeatedly, until the optimization
     algorithm has finished)."""
 

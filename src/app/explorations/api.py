@@ -20,7 +20,6 @@ import app.utils as utils
 from app.explorations.domain import (
     ExplorationError,
     ExplorationParameters,
-    ExplorationId,
     start_exploration,
 )
 
@@ -227,7 +226,7 @@ def notify_existing_minigrids(db: db.Session, minigrid: ExistingMinigrid) -> uti
 
 
 @router.post("/", status_code=fastapi.status.HTTP_201_CREATED)
-def start_new_exploration(db: db.Session, parameters: ExplorationParameters) -> ExplorationId:
+def start_new_exploration(db: db.Session, parameters: ExplorationParameters) -> pydantic.UUID4:
     id = start_exploration(db=db, parameters=parameters)
     if isinstance(id, ExplorationError):
         # TODO: raise HTTP error
