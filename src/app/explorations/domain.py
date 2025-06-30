@@ -306,5 +306,27 @@ def start_exploration(
     return db_exploration.id
 
 
-def check_exploration(db: db.Session, exploration_id: ExplorationId):
+def stop_exploration(db: db.Session, exploration_id: pydantic.UUID4) -> None | ExplorationError:
+    thread_clusters = get_thread_by_name(f"clusters/{exploration_id}")
+    if thread_clusters:
+        # TODO: set a variable in the thread so it kills itself.
+        pass
+    thread_inputs = get_thread_by_name(f"inputs/{exploration_id}")
+    if thread_inputs:
+        # TODO: set a variable in the thread so it kills itself.
+        pass
+    thread_results = get_thread_by_name(f"results/{exploration_id}")
+    if thread_results:
+        # TODO: set a variable in the thread so it kills itself.
+        pass
+    thread_exploration = get_thread_by_name(f"exploration/{exploration_id}")
+    if thread_exploration:
+        # TODO: set a variable in the thread so it kills itself.
+        pass
+
+    # TODO: delete all associated PotentialMinigrid in the DB
+    return None
+
+
+def check_exploration(db: db.Session, exploration_id: pydantic.UUID4) -> None | ExplorationError:
     pass
