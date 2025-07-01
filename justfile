@@ -38,8 +38,8 @@ db-generate tables:
     uv run sqlacodegen --tables {{tables}} postgresql://test:test@db:5432/test
 
 [group('database')]
-load-data drop_all:
-    uv run db_load_data(drop_all= {{drop_all | default('false')}})
+load-data DROP_ALL:
+    uv run db_load_data --drop_all={{DROP_ALL}}
 
 # run the API backend service with reload
 [group('fastapi')]

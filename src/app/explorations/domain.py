@@ -2,12 +2,11 @@ import datetime
 import enum
 import threading
 import time
-import typing
+import json
 import uuid
 
 import pydantic
 import sqlalchemy
-import sqlalchemy.dialects.postgresql as sqlapostgres
 import sqlmodel
 
 import app.db.core as db
@@ -30,6 +29,13 @@ class ExplorationParameters(sqlmodel.SQLModel):
     filtered out. Units: meter."""
 
 
+class ExplorationStatus(str, enum.Enum):
+    RUNNING = "RUNNING"
+    FINISHED = "FINISHED"
+    ERROR = "ERROR"
+    STOPPED = "STOPPED"
+
+
 class Exploration(ExplorationParameters, table=True):
     id: pydantic.UUID4 = sqlmodel.Field(default_factory=uuid.uuid4, primary_key=True)
 
@@ -43,7 +49,19 @@ class Exploration(ExplorationParameters, table=True):
 
     optimizer_finished_at: datetime.datetime | None = None
 
+    status: ExplorationStatus = sqlmodel.Field(
+        default=ExplorationStatus.RUNNING,
+        sa_column=sqlalchemy.Column(sqlalchemy.Enum(ExplorationStatus), nullable=False),
+    )
+
     created_at: datetime.datetime = sqlmodel.Field(default_factory=lambda: datetime.datetime.now())
+
+
+class SimulationStatus(str, enum.Enum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    FINISHED = "FINISHED"
+    ERROR = "ERROR"
 
 
 class Simulation(sqlmodel.SQLModel, table=True):
@@ -57,20 +75,21 @@ class Simulation(sqlmodel.SQLModel, table=True):
     # https://amercader.net/blog/beware-of-json-fields-in-sqlalchemy/. Recommended action: use deep
     # copy (probably from pydantic), as explained at the end of the article.
 
-    grid_input: dict[str, typing.Any] = sqlmodel.Field(
-        sa_column=sqlalchemy.Column(sqlapostgres.JSONB)
+    grid_input: str = sqlmodel.Field(sa_column=sqlalchemy.Column(sqlalchemy.Text))
+
+    grid_results: str | None = sqlmodel.Field(
+        sa_column=sqlalchemy.Column(sqlalchemy.Text), default=None
     )
 
-    grid_results: dict[str, typing.Any] | None = sqlmodel.Field(
-        sa_column=sqlalchemy.Column(sqlapostgres.JSONB), default=None
+    supply_input: str = sqlmodel.Field(sa_column=sqlalchemy.Column(sqlalchemy.Text))
+
+    supply_results: str | None = sqlmodel.Field(
+        sa_column=sqlalchemy.Column(sqlalchemy.Text), default=None
     )
 
-    supply_input: dict[str, typing.Any] = sqlmodel.Field(
-        sa_column=sqlalchemy.Column(sqlapostgres.JSONB)
-    )
-
-    supply_results: dict[str, typing.Any] | None = sqlmodel.Field(
-        sa_column=sqlalchemy.Column(sqlapostgres.JSONB), default=None
+    status: SimulationStatus = sqlmodel.Field(
+        default=SimulationStatus.PENDING,
+        sa_column=sqlalchemy.Column(sqlalchemy.Enum(SimulationStatus), nullable=False),
     )
 
     created_at: datetime.datetime = sqlmodel.Field(default_factory=lambda: datetime.datetime.now())
@@ -178,8 +197,8 @@ class WorkerGenerateOptimizerInputs:
             db_simulation = Simulation(
                 exploration_id=self._exploration_id,
                 cluster_id=cluster.cluster_id,
-                grid_input=grid_input.model_dump(mode="json"),
-                supply_input=supply_input.model_dump(mode="json"),
+                grid_input=grid_input.model_dump_json(),
+                supply_input=supply_input.model_dump_json(),
             )
             self._db.add(db_simulation)
             self._db.commit()
@@ -215,6 +234,10 @@ class WorkerRunOptimizer:
         self._result: None | ExplorationError = None
 
     def __call__(self) -> None:
+        db_exploration = self._db.get(Exploration, self._exploration_id)
+
+        assert db_exploration
+
         NUM_SLOTS: int = 5
         slots: list[
             tuple[
@@ -225,14 +248,18 @@ class WorkerRunOptimizer:
         ] = [(None, None, None) for _ in range(NUM_SLOTS)]
         statement = sqlmodel.select(Simulation).where(
             Simulation.exploration_id == self._exploration_id,
-            Simulation.grid_results is None,
+            Simulation.status == SimulationStatus.PENDING,
         )
+
+        # Wait until some simulations are available in the DB
+        while not self._db.exec(statement).all():
+            time.sleep(1)
 
         # Startup: fill up as many slots as possible with simulations
         db_simulations = self._db.exec(statement.limit(NUM_SLOTS)).all()
         for i, db_simulation in enumerate(db_simulations):
-            grid_input = grid.GridInput.model_validate(db_simulation.grid_input)
-            supply_input = supply.SupplyInput.model_validate(db_simulation.supply_input)
+            grid_input = grid.GridInput.model_validate(json.loads(db_simulation.grid_input))
+            supply_input = supply.SupplyInput.model_validate(json.loads(db_simulation.supply_input))
             checker_grid = offgrid_planner.optimize_grid(grid_input)
             checker_supply = offgrid_planner.optimize_supply(supply_input)
 
@@ -245,20 +272,33 @@ class WorkerRunOptimizer:
 
         # Invariant: slots[] contains minigrids we have not finished running the simulation for,
         # yet. If the first value of the tuple is None, the other two are None as well.
-
-        while not all(minigrid_id is None for minigrid_id, _g, _s in slots):
+        executed_simulations: int = 0
+        while (
+            not all(minigrid_id is None for minigrid_id, _g, _s in slots)
+            and db_exploration.minigrids_found
+            and executed_simulations < db_exploration.minigrids_found
+        ):
             # TODO: check global variable that finishes the thread if set
             time.sleep(1)
 
             for i, (minigrid_id, checker_grid, checker_supply) in enumerate(slots):
+                # TODO: I think this can be deleted!
                 # If the slot is empty, fill it up with a remaining simulation
                 if not minigrid_id:
                     db_simulation = self._db.exec(statement.limit(1)).one_or_none()
                     if db_simulation:
-                        grid_input = grid.GridInput.model_validate(db_simulation.grid_input)
-                        supply_input = supply.SupplyInput.model_validate(db_simulation.supply_input)
+                        grid_input = grid.GridInput.model_validate(
+                            json.loads(db_simulation.grid_input)
+                        )
+                        supply_input = supply.SupplyInput.model_validate(
+                            json.loads(db_simulation.supply_input)
+                        )
                         checker_grid = offgrid_planner.optimize_grid(grid_input)
                         checker_supply = offgrid_planner.optimize_supply(supply_input)
+
+                        db_simulation.status = SimulationStatus.RUNNING
+                        self._db.add(db_simulation)
+                        self._db.commit()
 
                         # TODO: check errors
                         assert not isinstance(
@@ -288,7 +328,7 @@ class WorkerRunOptimizer:
                                 grid_output.results, offgrid_planner.ErrorResultType
                             )
 
-                            db_simulation.grid_results = grid_output.results.model_dump(mode="json")
+                            db_simulation.grid_results = grid_output.results.model_dump_json()
                             checker_grid = None
                             self._db.add(db_simulation)
                             self._db.commit()
@@ -308,7 +348,12 @@ class WorkerRunOptimizer:
 
                             # The following is type-safe because supply.ResultKey can be used
                             # wherever a str is expected:
-                            db_simulation.supply_results = supply_output.results  # type: ignore
+                            plain = supply.supply_result_to_jsonable(supply_output.results)  # type: ignore
+                            json_text = json.dumps(
+                                plain,
+                                ensure_ascii=False,
+                            )
+                            db_simulation.supply_results = json_text
                             checker_supply = None
                             self._db.add(db_simulation)
                             self._db.commit()
@@ -316,7 +361,38 @@ class WorkerRunOptimizer:
                     # Empty the slot if the simulation has finished:
                     if not checker_grid and not checker_supply:
                         minigrid_id = None
+                        executed_simulations += 1
+                        db_simulation.status = SimulationStatus.FINISHED
+                        self._db.add(db_simulation)
+                        self._db.commit()
+
                     slots[i] = minigrid_id, checker_grid, checker_supply
+
+            # Check if there are simulations pending:
+            if (
+                all(minigrid_id is None for minigrid_id, _g, _s in slots)
+                and executed_simulations < db_exploration.minigrids_found
+            ):
+                statement = sqlmodel.select(Simulation).where(
+                    Simulation.exploration_id == self._exploration_id,
+                    Simulation.status == SimulationStatus.PENDING,
+                )
+                NUM_SIM = min(NUM_SLOTS, db_exploration.minigrids_found - executed_simulations)
+                db_simulations = self._db.exec(statement.limit(NUM_SIM)).all()
+                for i, db_simulation in enumerate(db_simulations):
+                    grid_input = grid.GridInput.model_validate(json.loads(db_simulation.grid_input))
+                    supply_input = supply.SupplyInput.model_validate(
+                        json.loads(db_simulation.supply_input)
+                    )
+                    checker_grid = offgrid_planner.optimize_grid(grid_input)
+                    checker_supply = offgrid_planner.optimize_supply(supply_input)
+
+                    # TODO: check errors
+                    assert not isinstance(
+                        checker_grid, offgrid_planner.ErrorServiceOffgridPlanner
+                    ) and not isinstance(checker_supply, offgrid_planner.ErrorServiceOffgridPlanner)
+
+                    slots[i] = (db_simulation.id, checker_grid, checker_supply)
 
     @property
     def result(self) -> None | ExplorationError:
@@ -344,6 +420,10 @@ def worker_exploration(
     db_exploration.clusters_found_at = datetime.datetime.now()
     db.add(db_exploration)
     db.commit()
+
+    # TODO: We need separate session for each thread, otherwise we get a
+    # "sqlalchemy.exc.InvalidRequestError: This session is in 'prepared' state;
+    # no further SQL can be emitted within this transaction." error.
 
     # The following 2 workers can run in parallel
     worker_inputs = WorkerGenerateOptimizerInputs(db, exploration_id, clustering_result)

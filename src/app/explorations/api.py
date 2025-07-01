@@ -16,6 +16,7 @@ import app.db.core as db
 import app.grid.domain as grid
 import app.shared.geography as geography
 import app.utils as utils
+import app.explorations.domain as explorations
 
 from app.explorations.domain import (
     ExplorationError,
@@ -227,6 +228,11 @@ def notify_existing_minigrids(db: db.Session, minigrid: ExistingMinigrid) -> uti
 
 @router.post("/", status_code=fastapi.status.HTTP_201_CREATED)
 def start_new_exploration(db: db.Session, parameters: ExplorationParameters) -> pydantic.UUID4:
+    # TODO: Check there isn't already an exploration being run:
+
+    db.exec(sqlmodel.delete(explorations.Simulation))  # type: ignore
+    db.commit()
+
     id = start_exploration(db=db, parameters=parameters)
     if isinstance(id, ExplorationError):
         # TODO: raise HTTP error

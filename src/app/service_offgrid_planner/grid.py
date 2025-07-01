@@ -47,11 +47,11 @@ class NodeAttributes(pydantic.BaseModel, typing.Generic[ShsOptionsType]):
     node_type: list[NodeType]
     consumer_type: list[ConsumerType]
     custom_specification: list[CustomSpecification | None]
-    shs_options: list[ShsOptionsType]
+    shs_options: list[ShsOptionsType | None]
     consumer_detail: list[ConsumerDetail]
     is_connected: list[bool]
-    distance_to_load_center: list[ShsOptionsType] | None = None
-    distribution_cost: list[ShsOptionsType] | None = None
+    distance_to_load_center: list[ShsOptionsType | None] | None = None
+    distribution_cost: list[ShsOptionsType | None] | None = None
     parent: list[str] | None = None
 
     @pydantic.model_validator(mode="after")

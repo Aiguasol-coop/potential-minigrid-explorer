@@ -2,6 +2,7 @@ import datetime
 import enum
 import json
 import typing
+import math
 
 import pydantic
 
@@ -135,3 +136,22 @@ class ResultItem(pydantic.BaseModel):
 
 
 type SupplyResult = dict[ResultKey, ResultItem]
+
+
+def supply_result_to_jsonable(sr: dict[ResultKey, ResultItem]) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    for rk, item in sr.items():
+        # 1) scalars: map ScalarKey → float (or null)
+        scalars = {
+            sk.value: (None if (isinstance(v, float) and math.isnan(v)) else v)
+            for sk, v in item.scalars.items()
+        }
+        # 2) sequences: a simple list of numbers or nulls
+        sequences = [
+            None if (isinstance(x, float) and math.isnan(x)) else x for x in item.sequences
+        ]
+        out[rk.value] = {
+            "scalars": scalars,
+            "sequences": sequences,
+        }
+    return out
