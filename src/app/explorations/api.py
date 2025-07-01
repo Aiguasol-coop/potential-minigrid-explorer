@@ -38,7 +38,7 @@ class ProjectStatusUpdate(pydantic.BaseModel):
 
 
 class PotentialProject(sqlmodel.SQLModel):
-    id: pydantic.UUID4
+    id: pydantic.UUID7
     status: ProjectStatus
     # TODO: Define list of "inputs" and "outputs/results" equal to RLI models
 

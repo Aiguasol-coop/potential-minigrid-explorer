@@ -35,17 +35,19 @@ class ConsumerDetail(str, enum.Enum):
     na = "n.a."
 
 
-ShsOptionsInt = typing.Annotated[int, pydantic.Field(ge=0, le=2)]
+# ShsOptionsInt = typing.Annotated[int, pydantic.Field(ge=0, le=2)]
 
 
 class NodeAttributes(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(allow_inf_nan=True)
+
     latitude: list[float]
     longitude: list[float]
     how_added: list[HowAdded]
     node_type: list[NodeType]
     consumer_type: list[ConsumerType]
     custom_specification: list[CustomSpecification | None]
-    shs_options: list[ShsOptionsInt | None]  # TODO: it was list[ShsOptionsInt]
+    shs_options: list[float | None]  # TODO: it was list[ShsOptionsInt]
     consumer_detail: list[ConsumerDetail]
     is_connected: list[bool]
     # TODO: it was list[float] | None = None
@@ -142,7 +144,7 @@ class Links(pydantic.BaseModel):
     length: list[float]
 
 
-class SupplyResults(pydantic.BaseModel):
+class GridResults(pydantic.BaseModel):
     nodes: NodeAttributes
     links: Links
 
@@ -162,7 +164,7 @@ class GridOutput(pydantic.BaseModel):
     server_info: ServerInfo | None
     id: str  # TODO: what UUID version?
     status: RequestStatus
-    results: SupplyResults
+    results: GridResults
 
 
 if __name__ == "__main__":
@@ -234,14 +236,18 @@ if __name__ == "__main__":
     #     longitude={i: node_dicts[i]["longitude"] for i in range(len(node_dicts))},  # type: ignore
     #     how_added={i: node_dicts[i]["how_added"] for i in range(len(node_dicts))},  # type: ignore
     #     node_type={i: node_dicts[i]["node_type"] for i in range(len(node_dicts))},  # type: ignore
-    #     consumer_type={i: node_dicts[i]["consumer_type"] for i in range(len(node_dicts))},  # type: ignore
+    #     consumer_type={i: node_dicts[i]["consumer_type"] for i in range(len(node_dicts))},
+    # # type: ignore
     #     custom_specification={
     #         i: node_dicts[i]["custom_specification"]
     #         for i in range(len(node_dicts))  # type: ignore
     #     },
-    #     shs_options={i: node_dicts[i]["shs_options"] for i in range(len(node_dicts))},  # type: ignore
-    #     consumer_detail={i: node_dicts[i]["consumer_detail"] for i in range(len(node_dicts))},  # type: ignore
-    #     is_connected={i: node_dicts[i]["is_connected"] for i in range(len(node_dicts))},  # type: ignore
+    #     shs_options={i: node_dicts[i]["shs_options"] for i in range(len(node_dicts))},
+    # # type: ignore
+    #     consumer_detail={i: node_dicts[i]["consumer_detail"] for i in range(len(node_dicts))},
+    # # type: ignore
+    #     is_connected={i: node_dicts[i]["is_connected"] for i in range(len(node_dicts))},
+    # # type: ignore
     # )
     # print(f"nodes: {nodes}")
 

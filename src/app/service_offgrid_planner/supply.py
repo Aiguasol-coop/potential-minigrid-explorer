@@ -76,6 +76,9 @@ class Parameters(pydantic.BaseModel):
     max_load: float | None = None
     min_efficiency: float | None = None
     max_efficiency: float | None = None
+    capex: float | None = None
+    opex: float | None = None
+    lifetime: float | None = None
 
 
 class Component(pydantic.BaseModel):
