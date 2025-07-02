@@ -7,12 +7,16 @@ import uuid
 
 import pydantic
 import sqlalchemy
+import sqlalchemy.dialects
 import sqlmodel
+import geoalchemy2
 
 import app.db.core as db
 import app.service_offgrid_planner.grid as grid
 import app.service_offgrid_planner.service as offgrid_planner
 import app.service_offgrid_planner.supply as supply
+import app.shared.geography as geography
+import app.service_offgrid_planner.results as project_result
 
 
 class ExplorationParameters(sqlmodel.SQLModel):
@@ -62,8 +66,11 @@ class SimulationStatus(str, enum.Enum):
     RUNNING = "RUNNING"
     FINISHED = "FINISHED"
     ERROR = "ERROR"
+    PROCESSED_ERROR = "PROCESSED_ERROR"
+    PROCESSED = "PROCESSED"
 
 
+# TODO: Add project hipothesis
 class Simulation(sqlmodel.SQLModel, table=True):
     id: pydantic.UUID4 = sqlmodel.Field(default_factory=uuid.uuid4, primary_key=True)
 
@@ -101,11 +108,6 @@ class Simulation(sqlmodel.SQLModel, table=True):
     )
 
 
-class ExplorationError(str, enum.Enum):
-    start_clustering_failed = "The clustering algorithm could not be launched"
-    clustering_algorithm_failed = "The clustering algorithm failed"
-
-
 class ClusterBuilding(sqlmodel.SQLModel):
     building_id: int  # shp_id
     building_type: str
@@ -114,10 +116,8 @@ class ClusterBuilding(sqlmodel.SQLModel):
     longitude: float
 
 
-class Cluster(sqlmodel.SQLModel):
+class ClusterBase(sqlmodel.SQLModel):
     cluster_id: int
-    latitude: float
-    longitude: float
     province: str
     num_buildings: int
     distance_to_grid_m: float
@@ -126,7 +126,39 @@ class Cluster(sqlmodel.SQLModel):
     eps_meters: float
     diameter_km: float
     grid_distance_km: float
-    buildings: list[ClusterBuilding]
+    buildings: list[ClusterBuilding] = sqlmodel.Field(
+        sa_column=sqlalchemy.Column(sqlalchemy.dialects.postgresql.JSONB, nullable=False),  # type: ignore
+        default_factory=list,
+    )
+    lcoe: float | None = None
+    """Levelized cost of energy. Units: $/kWh."""
+    capex: float | None = None
+    """Capital expenditure. Units: $US."""
+    res: float | None = sqlmodel.Field(ge=0.0, le=100.0, default=None)
+    """Renewable energy share."""
+    co2_savings: float | None = None
+    """CO2 emission savings. Units: tonne/year."""
+    consumption_total: float | None = None
+    """Total consumption. Units: kWh/year."""
+
+
+class Cluster(ClusterBase, geography.HasPointColumn, table=True):
+    id: pydantic.UUID4 | None = sqlmodel.Field(
+        default_factory=lambda: str(uuid.uuid4()), primary_key=True, index=True
+    )
+
+    pg_geography: str = sqlmodel.Field(
+        default=None,
+        sa_column=sqlalchemy.Column(
+            geoalchemy2.Geography(geometry_type="POINT", srid=4326), nullable=False
+        ),
+    )
+    create_at: datetime.datetime = sqlmodel.Field(default_factory=lambda: datetime.datetime.now())
+
+
+class ExplorationError(str, enum.Enum):
+    start_clustering_failed = "The clustering algorithm could not be launched"
+    clustering_algorithm_failed = "The clustering algorithm failed"
 
 
 class ClusteringResult(sqlmodel.SQLModel):
@@ -138,6 +170,7 @@ class WorkerFindClusters:
     def __init__(self, parameters: ExplorationParameters):
         self._parameters = parameters
         self._result: ClusteringResult | None = None
+        self._db: db.Session = sqlmodel.Session(db.get_engine())
 
     def __call__(self) -> None:
         #  TODO: aquí el codi del Michel (DBSCAN)
@@ -149,8 +182,6 @@ class WorkerFindClusters:
         for i in range(10):
             c = Cluster(
                 cluster_id=i,
-                latitude=-10.0,
-                longitude=-20.0,
                 province="A_province",
                 num_buildings=30,
                 distance_to_grid_m=1200000,
@@ -160,8 +191,12 @@ class WorkerFindClusters:
                 diameter_km=0.3,
                 grid_distance_km=1200,
                 buildings=[],
+                pg_geography="POINT(2.0 41.0)",
             )
             self._result.potential_minigrids.append(c)
+            self._db.add(c)
+            self._db.commit()
+            self._db.refresh(c)
 
         ### END of FAKE code
 
@@ -171,10 +206,8 @@ class WorkerFindClusters:
 
 
 class WorkerGenerateOptimizerInputs:
-    def __init__(
-        self, db: db.Session, exploration_id: pydantic.UUID4, clustering_result: ClusteringResult
-    ):
-        self._db = db
+    def __init__(self, exploration_id: pydantic.UUID4, clustering_result: ClusteringResult):
+        self._db: db.Session = sqlmodel.Session(db.get_engine())
         self._exploration_id = exploration_id
         self._clustering_result = clustering_result
         self._result: None | ExplorationError = None
@@ -188,6 +221,7 @@ class WorkerGenerateOptimizerInputs:
         db_exploration.minigrids_found = len(self._clustering_result.potential_minigrids)
         self._db.add(db_exploration)
         self._db.commit()
+        self._db.refresh(db_exploration)
 
         for cluster in self._clustering_result.potential_minigrids:
             # TODO: check global variable that finishes the thread if set
@@ -202,6 +236,7 @@ class WorkerGenerateOptimizerInputs:
             )
             self._db.add(db_simulation)
             self._db.commit()
+            self._db.refresh(db_simulation)
 
         self._result = None
 
@@ -227,8 +262,8 @@ class WorkerGenerateOptimizerInputs:
 
 
 class WorkerRunOptimizer:
-    def __init__(self, db: db.Session, exploration_id: pydantic.UUID4):
-        self._db = db
+    def __init__(self, exploration_id: pydantic.UUID4):
+        self._db: db.Session = sqlmodel.Session(db.get_engine())
         self._exploration_id = exploration_id
         self._finished = False
         self._result: None | ExplorationError = None
@@ -238,7 +273,7 @@ class WorkerRunOptimizer:
 
         assert db_exploration
 
-        NUM_SLOTS: int = 5
+        NUM_SLOTS: int = 3
         slots: list[
             tuple[
                 pydantic.UUID4 | None,
@@ -256,6 +291,8 @@ class WorkerRunOptimizer:
             time.sleep(1)
 
         # Startup: fill up as many slots as possible with simulations
+        executed_simulations: int = 0
+        last_bucket = False
         db_simulations = self._db.exec(statement.limit(NUM_SLOTS)).all()
         for i, db_simulation in enumerate(db_simulations):
             grid_input = grid.GridInput.model_validate(json.loads(db_simulation.grid_input))
@@ -263,20 +300,38 @@ class WorkerRunOptimizer:
             checker_grid = offgrid_planner.optimize_grid(grid_input)
             checker_supply = offgrid_planner.optimize_supply(supply_input)
 
-            # TODO: check errors
-            assert not isinstance(
-                checker_grid, offgrid_planner.ErrorServiceOffgridPlanner
-            ) and not isinstance(checker_supply, offgrid_planner.ErrorServiceOffgridPlanner)
+            db_simulation.status = SimulationStatus.RUNNING
+            self._db.add(db_simulation)
+            self._db.commit()
+            self._db.refresh(db_simulation)
 
-            slots[i] = (db_simulation.id, checker_grid, checker_supply)
+            # TODO: check errors
+            if isinstance(checker_grid, offgrid_planner.ErrorServiceOffgridPlanner) | isinstance(
+                checker_supply, offgrid_planner.ErrorServiceOffgridPlanner
+            ):
+                db_simulation.status = SimulationStatus.ERROR
+                self._db.add(db_simulation)
+                self._db.commit()
+                self._db.refresh(db_simulation)
+
+                executed_simulations += 1
+            else:
+                if not isinstance(
+                    checker_grid, offgrid_planner.ErrorServiceOffgridPlanner
+                ) and not isinstance(checker_supply, offgrid_planner.ErrorServiceOffgridPlanner):
+                    slots[i] = (db_simulation.id, checker_grid, checker_supply)
 
         # Invariant: slots[] contains minigrids we have not finished running the simulation for,
         # yet. If the first value of the tuple is None, the other two are None as well.
-        executed_simulations: int = 0
+        if not db_exploration.minigrids_found:
+            raise RuntimeError(
+                "The exploration has no minigrids to run simulations for. "
+                "Please check the clustering step."
+            )
+
         while (
             not all(minigrid_id is None for minigrid_id, _g, _s in slots)
-            and db_exploration.minigrids_found
-            and executed_simulations < db_exploration.minigrids_found
+            or executed_simulations < db_exploration.minigrids_found
         ):
             # TODO: check global variable that finishes the thread if set
             time.sleep(1)
@@ -284,9 +339,9 @@ class WorkerRunOptimizer:
             for i, (minigrid_id, checker_grid, checker_supply) in enumerate(slots):
                 # TODO: I think this can be deleted!
                 # If the slot is empty, fill it up with a remaining simulation
-                if not minigrid_id:
+                if not minigrid_id and not last_bucket:
                     db_simulation = self._db.exec(statement.limit(1)).one_or_none()
-                    if db_simulation:
+                    if db_simulation and db_simulation.id not in [s[0] for s in slots]:
                         grid_input = grid.GridInput.model_validate(
                             json.loads(db_simulation.grid_input)
                         )
@@ -299,15 +354,25 @@ class WorkerRunOptimizer:
                         db_simulation.status = SimulationStatus.RUNNING
                         self._db.add(db_simulation)
                         self._db.commit()
+                        self._db.refresh(db_simulation)
 
                         # TODO: check errors
-                        assert not isinstance(
+                        if isinstance(
                             checker_grid, offgrid_planner.ErrorServiceOffgridPlanner
-                        ) and not isinstance(
-                            checker_supply, offgrid_planner.ErrorServiceOffgridPlanner
-                        )
+                        ) | isinstance(checker_supply, offgrid_planner.ErrorServiceOffgridPlanner):
+                            db_simulation.status = SimulationStatus.ERROR
+                            self._db.add(db_simulation)
+                            self._db.commit()
+                            self._db.refresh(db_simulation)
 
-                        slots[i] = (db_simulation.id, checker_grid, checker_supply)
+                            executed_simulations += 1
+                        else:
+                            if not isinstance(
+                                checker_grid, offgrid_planner.ErrorServiceOffgridPlanner
+                            ) and not isinstance(
+                                checker_supply, offgrid_planner.ErrorServiceOffgridPlanner
+                            ):
+                                slots[i] = (db_simulation.id, checker_grid, checker_supply)
 
                 # Slot not empty: check if either the grid or the supply optimizers have finished
                 else:
@@ -319,11 +384,16 @@ class WorkerRunOptimizer:
                         grid_output = checker_grid()
 
                         # TODO: check errors
-                        assert not isinstance(
-                            grid_output, offgrid_planner.ErrorServiceOffgridPlanner
-                        )
+                        if isinstance(grid_output, offgrid_planner.ErrorServiceOffgridPlanner):
+                            db_simulation.status = SimulationStatus.ERROR
+                            self._db.add(db_simulation)
+                            self._db.commit()
+                            self._db.refresh(db_simulation)
 
-                        if grid_output.status == offgrid_planner.RequestStatus.DONE:
+                            checker_grid = None
+                            grid_output = None
+
+                        if grid_output and grid_output.status == offgrid_planner.RequestStatus.DONE:
                             assert grid_output.results and not isinstance(
                                 grid_output.results, offgrid_planner.ErrorResultType
                             )
@@ -332,39 +402,49 @@ class WorkerRunOptimizer:
                             checker_grid = None
                             self._db.add(db_simulation)
                             self._db.commit()
+                            self._db.refresh(db_simulation)
 
                     if checker_supply:
                         supply_output = checker_supply()
 
                         # TODO: check errors
-                        assert not isinstance(
-                            supply_output, offgrid_planner.ErrorServiceOffgridPlanner
-                        )
+                        if isinstance(supply_output, offgrid_planner.ErrorServiceOffgridPlanner):
+                            db_simulation.status = SimulationStatus.ERROR
+                            self._db.add(db_simulation)
+                            self._db.commit()
+                            self._db.refresh(db_simulation)
 
-                        if supply_output.status == offgrid_planner.RequestStatus.DONE:
+                            checker_supply = None
+                            supply_output = None
+
+                        if (
+                            supply_output
+                            and supply_output.status == offgrid_planner.RequestStatus.DONE
+                        ):
                             assert supply_output.results and not isinstance(
                                 supply_output.results, offgrid_planner.ErrorResultType
                             )
 
                             # The following is type-safe because supply.ResultKey can be used
                             # wherever a str is expected:
-                            plain = supply.supply_result_to_jsonable(supply_output.results)  # type: ignore
-                            json_text = json.dumps(
-                                plain,
-                                ensure_ascii=False,
-                            )
-                            db_simulation.supply_results = json_text
+                            db_simulation.supply_results = supply_output.results.model_dump_json()
                             checker_supply = None
                             self._db.add(db_simulation)
                             self._db.commit()
+                            self._db.refresh(db_simulation)
 
                     # Empty the slot if the simulation has finished:
                     if not checker_grid and not checker_supply:
                         minigrid_id = None
                         executed_simulations += 1
-                        db_simulation.status = SimulationStatus.FINISHED
+                        db_simulation.status = (
+                            SimulationStatus.FINISHED
+                            if db_simulation.status == SimulationStatus.RUNNING
+                            else db_simulation.status
+                        )
                         self._db.add(db_simulation)
                         self._db.commit()
+                        self._db.refresh(db_simulation)
 
                     slots[i] = minigrid_id, checker_grid, checker_supply
 
@@ -388,61 +468,177 @@ class WorkerRunOptimizer:
                     checker_supply = offgrid_planner.optimize_supply(supply_input)
 
                     # TODO: check errors
-                    assert not isinstance(
+                    if isinstance(
                         checker_grid, offgrid_planner.ErrorServiceOffgridPlanner
-                    ) and not isinstance(checker_supply, offgrid_planner.ErrorServiceOffgridPlanner)
+                    ) | isinstance(checker_supply, offgrid_planner.ErrorServiceOffgridPlanner):
+                        db_simulation.status = SimulationStatus.ERROR
+                        self._db.add(db_simulation)
+                        self._db.commit()
+                        self._db.refresh(db_simulation)
 
-                    slots[i] = (db_simulation.id, checker_grid, checker_supply)
+                        executed_simulations += 1
+                    else:
+                        if not isinstance(
+                            checker_grid, offgrid_planner.ErrorServiceOffgridPlanner
+                        ) and not isinstance(
+                            checker_supply, offgrid_planner.ErrorServiceOffgridPlanner
+                        ):
+                            slots[i] = (db_simulation.id, checker_grid, checker_supply)
+
+                if db_exploration.minigrids_found - executed_simulations <= NUM_SLOTS:
+                    last_bucket = True
 
     @property
     def result(self) -> None | ExplorationError:
         return self._result
 
 
-def worker_exploration(
-    db: db.Session, parameters: ExplorationParameters, exploration_id: pydantic.UUID4
-):
+class WorkerProcessSimulationResults:
+    def __init__(self, exploration_id: pydantic.UUID4):
+        self._db: db.Session = sqlmodel.Session(db.get_engine())
+        self._exploration_id = exploration_id
+        self._result: None | ExplorationError = None
+
+    def __call__(self) -> None:
+        db_exploration = self._db.get(Exploration, self._exploration_id)
+
+        assert db_exploration
+
+        statement = sqlmodel.select(Simulation).where(
+            Simulation.exploration_id == self._exploration_id,
+            sqlmodel.or_(
+                Simulation.status == SimulationStatus.FINISHED,
+                Simulation.status == SimulationStatus.ERROR,
+            ),
+        )
+
+        # Wait until some simulations are available in the DB
+        while not self._db.exec(statement).all():
+            time.sleep(1)
+
+        num_processed = 0
+
+        if db_exploration.minigrids_found is None:
+            raise RuntimeError(
+                "The exploration has no minigrids to run simulations for. "
+                "Please check the clustering step."
+            )
+
+        while num_processed < db_exploration.minigrids_found:
+            simulations_to_process = self._db.exec(statement).all()
+
+            for simulation in simulations_to_process:
+                if simulation.status == SimulationStatus.FINISHED:
+                    sim_results = self.process_simulation_results(simulation)
+                    cluster = self._db.exec(
+                        sqlmodel.select(Cluster).where(Cluster.cluster_id == simulation.cluster_id)
+                    ).one()
+                    assert cluster
+                    updates = sim_results.model_dump(exclude_none=True)
+                    for field, val in updates.items():
+                        setattr(cluster, field, val)
+
+                    self._db.add(cluster)
+                    self._db.commit()
+                    self._db.refresh(cluster)
+                    simulation.status = SimulationStatus.PROCESSED
+                    self._db.add(simulation)
+                    self._db.commit()
+                    self._db.refresh(simulation)
+                    num_processed += 1
+
+                elif simulation.status == SimulationStatus.ERROR:
+                    simulation.status = SimulationStatus.PROCESSED_ERROR
+                    self._db.add(simulation)
+                    self._db.commit()
+                    self._db.refresh(simulation)
+                    num_processed += 1
+
+    def process_simulation_results(self, simulation: Simulation) -> project_result.ResultsSummary:
+        self.project = project_result.Project(id=simulation.id)
+        grid_input = grid.GridInput.model_validate_json(simulation.grid_input)
+        self.project.grid_inputs = grid_input
+        self.project.load_grid_inputs()
+
+        supply_input = supply.SupplyInput.model_validate_json(simulation.supply_input)
+        self.project.supply_inputs = supply_input
+        self.project.load_supply_inputs()
+
+        if simulation.grid_results:
+            grid_output = grid.GridResult.model_validate_json(simulation.grid_results)
+            self.project.grid_outputs = grid_output
+
+        if simulation.supply_results:
+            supply_output = supply.SupplyResult.model_validate_json(simulation.supply_results)
+            self.project.supply_outputs = supply_output
+
+        self.project.grid_results()
+        self.project.supply_results()
+
+        return self.project.get_results_summary()
+
+
+def worker_exploration(parameters: ExplorationParameters, exploration_id: pydantic.UUID4):
     """Worker to be used as the target of a thread. It creates 3 sub-threads and waits until all of
     them finish."""
 
-    worker_clusters = WorkerFindClusters(parameters)
-    thread_clusters = threading.Thread(target=worker_clusters, name=f"clusters/{exploration_id}")
-    thread_clusters.start()
-    thread_clusters.join()
-    clustering_result = worker_clusters.result
+    with sqlmodel.Session(db.get_engine()) as db_session:
+        worker_clusters = WorkerFindClusters(parameters)
+        thread_clusters = threading.Thread(
+            target=worker_clusters, name=f"clusters/{exploration_id}"
+        )
+        thread_clusters.start()
+        thread_clusters.join()
+        clustering_result = worker_clusters.result
 
-    assert clustering_result
+        assert clustering_result
 
-    db_exploration = db.get(Exploration, exploration_id)
+        db_exploration = db_session.get(Exploration, exploration_id)
 
-    assert db_exploration
+        assert db_exploration
 
-    db_exploration.clusters_found_at = datetime.datetime.now()
-    db.add(db_exploration)
-    db.commit()
+        db_exploration.clusters_found_at = datetime.datetime.now()
+        db_session.add(db_exploration)
+        db_session.commit()
 
-    # TODO: We need separate session for each thread, otherwise we get a
-    # "sqlalchemy.exc.InvalidRequestError: This session is in 'prepared' state;
-    # no further SQL can be emitted within this transaction." error.
+        # The following 2 workers can run in parallel
+        worker_inputs = WorkerGenerateOptimizerInputs(exploration_id, clustering_result)
+        thread_inputs = threading.Thread(target=worker_inputs, name=f"inputs/{exploration_id}")
+        thread_inputs.start()
 
-    # The following 2 workers can run in parallel
-    worker_inputs = WorkerGenerateOptimizerInputs(db, exploration_id, clustering_result)
-    thread_inputs = threading.Thread(target=worker_inputs, name=f"inputs/{exploration_id}")
-    thread_inputs.start()
+        worker_optimizer = WorkerRunOptimizer(exploration_id)
+        thread_optimizer = threading.Thread(
+            target=worker_optimizer, name=f"optimizer/{exploration_id}"
+        )
+        thread_optimizer.start()
 
-    worker_results = WorkerRunOptimizer(db, exploration_id)
-    thread_results = threading.Thread(target=worker_results, name=f"results/{exploration_id}")
-    thread_results.start()
+        worker_results = WorkerProcessSimulationResults(exploration_id)
+        thread_results = threading.Thread(target=worker_results, name=f"results/{exploration_id}")
+        thread_results.start()
 
-    thread_inputs.join()
-    db_exploration.optimizer_inputs_generated_at = datetime.datetime.now()
-    db.add(db_exploration)
-    db.commit()
+        thread_inputs.join()
+        db_exploration.optimizer_inputs_generated_at = datetime.datetime.now()
+        db_session.add(db_exploration)
+        db_session.commit()
 
-    thread_results.join()
-    db_exploration.optimizer_finished_at = datetime.datetime.now()
-    db.add(db_exploration)
-    db.commit()
+        thread_optimizer.join()
+        db_exploration.optimizer_finished_at = datetime.datetime.now()
+        db_session.add(db_exploration)
+        db_session.commit()
+
+        thread_results.join()
+        db_exploration.status = (
+            ExplorationStatus.FINISHED
+            if not all(
+                simulation.status == SimulationStatus.PROCESSED_ERROR
+                for simulation in db_session.exec(
+                    sqlmodel.select(Simulation).where(Simulation.exploration_id == exploration_id)
+                ).all()
+            )
+            else ExplorationStatus.ERROR
+        )
+        db_session.add(db_exploration)
+        db_session.commit()
 
 
 def get_thread_by_name(name: str) -> threading.Thread | None:
@@ -457,12 +653,14 @@ def start_exploration(
     db: db.Session, parameters: ExplorationParameters
 ) -> pydantic.UUID4 | ExplorationError:
     db_exploration = Exploration.model_validate(parameters)
+    db_exploration.status = ExplorationStatus.RUNNING
     db.add(db_exploration)
     db.commit()
     db.refresh(db_exploration)
 
     thread = threading.Thread(
-        target=worker_exploration(db, parameters, db_exploration.id),
+        target=worker_exploration,  # the function, not its result
+        args=(parameters, db_exploration.id),
         name=f"exploration/{db_exploration.id}",
     )
     thread.start()
@@ -474,19 +672,18 @@ def start_exploration(
 def stop_exploration(db: db.Session, exploration_id: pydantic.UUID4) -> None | ExplorationError:
     # TODO: set global, thread-safe variable that indicates to threads to kill themselves
 
-    # TODO: delete all associated PotentialMinigrid in the DB
     return None
 
 
-def check_exploration(
-    db: db.Session, exploration_id: pydantic.UUID4
-) -> tuple[Exploration, list[Simulation]] | ExplorationError:
-    """Returns the input and results for all the simulations that have already finished in the
-    current exploration."""
+# def check_exploration(
+#     db: db.Session, exploration_id: pydantic.UUID4
+# ) -> tuple[Exploration, list[Simulation]] | ExplorationError:
+#     """Returns the input and results for all the simulations that have already finished in the
+#     current exploration."""
 
-    # TODO: retrieve from the DB the current state of the current exploration and its simulations
+#     # TODO: retrieve from the DB the current state of the current exploration and its simulations
 
-    pass
+#     pass
 
 
 if __name__ == "__main__":

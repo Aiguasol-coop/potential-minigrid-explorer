@@ -34,7 +34,7 @@
                 "--port",
                 "8000"
             ],
-            "cwd": "${workspaceFolder}",
+            "cwd": "${workspaceFolder}/src",
             "justMyCode": true,
             "env": {
                 "PYTHONPATH": "${workspaceFolder}/src:${PYTHONPATH}"

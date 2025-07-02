@@ -2,7 +2,7 @@ import datetime
 import enum
 import json
 import typing
-import math
+
 
 import pydantic
 
@@ -106,23 +106,6 @@ class ScalarKey(str, enum.Enum):
     invest = "invest"
 
 
-class ResultKey(enum.StrEnum):
-    battery_none = "battery__None"
-    battery_electricity_dc = "battery__electricity_dc"
-    diesel_genset_electricity_ac = "diesel_genset__electricity_ac"
-    electricity_ac_demand = "electricity_ac__electricity_demand"
-    electricity_ac_rectifier = "electricity_ac__rectifier"
-    electricity_ac_surplus = "electricity_ac__surplus"
-    electricity_dc_battery = "electricity_dc__battery"
-    electricity_dc_inverter = "electricity_dc__inverter"
-    fuel_diesel_genset = "fuel__diesel_genset"
-    fuel_source_fuel = "fuel_source__fuel"
-    inverter_electricity_ac = "inverter__electricity_ac"
-    pv_electricity_dc = "pv__electricity_dc"
-    rectifier_electricity_dc = "rectifier__electricity_dc"
-    shortage_electricity_ac = "shortage__electricity_ac"
-
-
 class ResultItem(pydantic.BaseModel):
     scalars: dict[ScalarKey, float]
     sequences: list[float]
@@ -135,23 +118,18 @@ class ResultItem(pydantic.BaseModel):
         return v
 
 
-type SupplyResult = dict[ResultKey, ResultItem]
-
-
-def supply_result_to_jsonable(sr: dict[ResultKey, ResultItem]) -> dict[str, dict]:
-    out: dict[str, dict] = {}
-    for rk, item in sr.items():
-        # 1) scalars: map ScalarKey → float (or null)
-        scalars = {
-            sk.value: (None if (isinstance(v, float) and math.isnan(v)) else v)
-            for sk, v in item.scalars.items()
-        }
-        # 2) sequences: a simple list of numbers or nulls
-        sequences = [
-            None if (isinstance(x, float) and math.isnan(x)) else x for x in item.sequences
-        ]
-        out[rk.value] = {
-            "scalars": scalars,
-            "sequences": sequences,
-        }
-    return out
+class SupplyResult(pydantic.BaseModel):
+    battery__None: ResultItem | None = None
+    battery__electricity_dc: ResultItem | None = None
+    diesel_genset__electricity_ac: ResultItem | None = None
+    electricity_ac__electricity_demand: ResultItem | None = None
+    electricity_ac__rectifier: ResultItem | None = None
+    electricity_ac__surplus: ResultItem | None = None
+    electricity_dc__battery: ResultItem | None = None
+    electricity_dc__inverter: ResultItem | None = None
+    fuel__diesel_genset: ResultItem | None = None
+    fuel_source__fuel: ResultItem | None = None
+    inverter__electricity_ac: ResultItem | None = None
+    pv__electricity_dc: ResultItem | None = None
+    rectifier__electricity_dc: ResultItem | None = None
+    shortage__electricity_ac: ResultItem | None = None

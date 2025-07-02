@@ -1,7 +1,6 @@
 import datetime
 import decimal
 import enum
-import random
 import uuid
 
 import fastapi
@@ -45,11 +44,6 @@ class PotentialProject(sqlmodel.SQLModel):
     id: pydantic.UUID4
     status: ProjectStatus
     # TODO: Define list of "inputs" and "outputs/results" equal to RLI models
-
-
-class ExplorationEstimationResult(sqlmodel.SQLModel):
-    num_of_minigrids: int
-    duration: datetime.timedelta
 
 
 class PotentialMinigrid(sqlmodel.SQLModel):
@@ -113,11 +107,14 @@ class ExplorationStatus(str, enum.Enum):
 class ExplorationResult(sqlmodel.SQLModel):
     status: ExplorationStatus
     starting_time: datetime.datetime
-    duration: datetime.timedelta
-    clusters_found: int
-    minigrids_found: int
-    minigrids_analyzed: int
-    minigrids: list[PotentialMinigrid]
+    current_duration: datetime.timedelta | None = None
+    estimated_duration: datetime.timedelta | None = None
+    clusters_found: int | None = None
+    minigrids_found: int | None = None
+    minigrids_analyzed: int | None = None
+    minigrids_calculated: int | None = None
+    minigrids_errors: int | None = None
+    minigrids: list[PotentialMinigrid] | None = None
 
 
 class ResponseOk(pydantic.BaseModel):
@@ -228,8 +225,21 @@ def notify_existing_minigrids(db: db.Session, minigrid: ExistingMinigrid) -> uti
 
 @router.post("/", status_code=fastapi.status.HTTP_201_CREATED)
 def start_new_exploration(db: db.Session, parameters: ExplorationParameters) -> pydantic.UUID4:
-    # TODO: Check there isn't already an exploration being run:
+    """Start a new exploration with the given parameters."""
 
+    db_exploration_running = db.exec(
+        sqlmodel.select(explorations.Simulation).where(
+            explorations.Simulation.status == explorations.ExplorationStatus.RUNNING
+        )
+    ).first()
+    if db_exploration_running:
+        raise fastapi.HTTPException(
+            status_code=fastapi.status.HTTP_409_CONFLICT,
+            detail=f"""An exploration with ID {db_exploration_running.id} is already running;
+            please stop it or wait until it finishes.""",
+        )
+
+    db.exec(sqlmodel.delete(explorations.Cluster))  # type: ignore
     db.exec(sqlmodel.delete(explorations.Simulation))  # type: ignore
     db.commit()
 
@@ -241,15 +251,23 @@ def start_new_exploration(db: db.Session, parameters: ExplorationParameters) -> 
     return id
 
 
-@router.get("/{exploration_id}/estimation")
-def get_exploration_estimation(exploration_id: pydantic.UUID6) -> ExplorationEstimationResult:
-    # TODO: put some meaningful value here
-    result = ExplorationEstimationResult(
-        num_of_minigrids=random.randint(40, 90),
-        duration=datetime.timedelta(random.randint(10, 120)),
-    )
+@router.post("/{exploration_id}/stop")
+def stop_exploration(id: pydantic.UUID4) -> ResponseOk:
+    pass
 
-    return result
+    return ResponseOk()
+
+
+# # TODO: Merge this endpoint with the one below
+# @router.get("/{exploration_id}/estimation")
+# def get_exploration_estimation(exploration_id: pydantic.UUID6) -> ExplorationEstimationResult:
+#     # TODO: put some meaningful value here
+#     result = ExplorationEstimationResult(
+#         num_of_minigrids=random.randint(40, 90),
+#         duration=datetime.timedelta(random.randint(10, 120)),
+#     )
+
+#     return result
 
 
 # @router.get("/{exploration_id}")
@@ -275,13 +293,6 @@ def get_exploration_estimation(exploration_id: pydantic.UUID6) -> ExplorationEst
 #     exploration_id: pydantic.UUID4, grid_id: pydantic.UUID4
 # ) -> grid.GridDescriptor:
 #     pass
-
-
-@router.post("/{exploration_id}/stop")
-def stop_exploration(id: pydantic.UUID4) -> ResponseOk:
-    pass
-
-    return ResponseOk()
 
 
 @router.put("/{project_id}/update")

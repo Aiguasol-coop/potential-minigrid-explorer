@@ -25,7 +25,7 @@ def get_engine() -> sqlalchemy.Engine:
 
     # SERIALIZABLE gives maximum ACID transactional guarantees, see
     # https://www.postgresql.org/docs/current/transaction-iso.html
-    engine = sqlalchemy.create_engine(db_url, isolation_level="SERIALIZABLE")
+    engine = sqlalchemy.create_engine(db_url, isolation_level="READ COMMITTED")  # SERIALIZABLE
 
     return engine
 

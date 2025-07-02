@@ -1,8 +1,4 @@
-{
-    "server_info": "supply",
-    "id": "0cf4c89d-e43a-4b1e-a447-ac163d401d4b",
-    "status": "DONE",
-    "results": {
+    {
         "battery__None": {
             "scalars": "{\"init_content\":199677.47,\"invest\":19967.747}",
             "sequences": [
@@ -122714,4 +122710,3 @@
             ]
         }
     }
-}
