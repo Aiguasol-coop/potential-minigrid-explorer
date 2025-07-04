@@ -4,6 +4,7 @@ import threading
 import time
 import json
 import uuid
+import typing
 
 import pydantic
 import sqlalchemy
@@ -61,16 +62,22 @@ class Exploration(ExplorationParameters, table=True):
     created_at: datetime.datetime = sqlmodel.Field(default_factory=lambda: datetime.datetime.now())
 
 
+class ProjectStatus(enum.Enum):
+    POTENTIAL = "POTENTIAL"
+    PROJECT = "PROJECT"
+    MONITORING = "MONITORING"
+
+
 class SimulationStatus(str, enum.Enum):
     PENDING = "PENDING"
     RUNNING = "RUNNING"
     FINISHED = "FINISHED"
+    STOPPED = "STOPPED"
     ERROR = "ERROR"
     PROCESSED_ERROR = "PROCESSED_ERROR"
     PROCESSED = "PROCESSED"
 
 
-# TODO: Add project hipothesis
 class Simulation(sqlmodel.SQLModel, table=True):
     id: pydantic.UUID4 = sqlmodel.Field(default_factory=uuid.uuid4, primary_key=True)
 
@@ -81,6 +88,10 @@ class Simulation(sqlmodel.SQLModel, table=True):
     # WARNING: Be careful when updating the following attributes, read
     # https://amercader.net/blog/beware-of-json-fields-in-sqlalchemy/. Recommended action: use deep
     # copy (probably from pydantic), as explained at the end of the article.
+
+    project_input: str | None = sqlmodel.Field(
+        sa_column=sqlalchemy.Column(sqlalchemy.Text), default=None
+    )
 
     grid_input: str = sqlmodel.Field(sa_column=sqlalchemy.Column(sqlalchemy.Text))
 
@@ -96,6 +107,11 @@ class Simulation(sqlmodel.SQLModel, table=True):
 
     status: SimulationStatus = sqlmodel.Field(
         default=SimulationStatus.PENDING,
+        sa_column=sqlalchemy.Column(sqlalchemy.Enum(SimulationStatus), nullable=False),
+    )
+
+    project_status: ProjectStatus = sqlmodel.Field(
+        default=ProjectStatus.POTENTIAL,
         sa_column=sqlalchemy.Column(sqlalchemy.Enum(SimulationStatus), nullable=False),
     )
 
@@ -167,19 +183,32 @@ class ClusteringResult(sqlmodel.SQLModel):
 
 
 class WorkerFindClusters:
-    def __init__(self, parameters: ExplorationParameters):
+    def __init__(self, parameters: ExplorationParameters, exploration_id: pydantic.UUID4):
         self._parameters = parameters
+        self._exploration_id = exploration_id
         self._result: ClusteringResult | None = None
         self._db: db.Session = sqlmodel.Session(db.get_engine())
 
     def __call__(self) -> None:
+        db_exploration = self._db.get(Exploration, self._exploration_id)
+
+        assert db_exploration
+
         #  TODO: aquí el codi del Michel (DBSCAN)
         #
         ### BEGIN of FAKE code
 
+        if db_exploration.status == ExplorationStatus.STOPPED:
+            self._result = None
+            return self._result
+
         self._result = ClusteringResult(clusters_found=50, potential_minigrids=[])
 
         for i in range(10):
+            if db_exploration.status == ExplorationStatus.STOPPED:  # type: ignore
+                self._result = None
+                return self._result
+
             c = Cluster(
                 cluster_id=i,
                 province="A_province",
@@ -223,8 +252,15 @@ class WorkerGenerateOptimizerInputs:
         self._db.commit()
         self._db.refresh(db_exploration)
 
+        if db_exploration.status == ExplorationStatus.STOPPED:
+            self._result = None
+            return self._result
+
         for cluster in self._clustering_result.potential_minigrids:
             # TODO: check global variable that finishes the thread if set
+            if db_exploration.status == ExplorationStatus.STOPPED:  # type: ignore
+                self._result = None
+                return self._result
 
             grid_input, supply_input = self.generate_inputs(cluster)
 
@@ -287,14 +323,25 @@ class WorkerRunOptimizer:
         )
 
         # Wait until some simulations are available in the DB
-        while not self._db.exec(statement).all():
+        while (
+            not self._db.exec(statement).all()
+            and db_exploration.status != ExplorationStatus.STOPPED
+        ):
             time.sleep(1)
+
+        if db_exploration.status == ExplorationStatus.STOPPED:
+            self._result = None
+            return self._result
 
         # Startup: fill up as many slots as possible with simulations
         executed_simulations: int = 0
         last_bucket = False
         db_simulations = self._db.exec(statement.limit(NUM_SLOTS)).all()
         for i, db_simulation in enumerate(db_simulations):
+            if db_exploration.status == ExplorationStatus.STOPPED:  # type: ignore
+                self._result = None
+                return self._result
+
             grid_input = grid.GridInput.model_validate(json.loads(db_simulation.grid_input))
             supply_input = supply.SupplyInput.model_validate(json.loads(db_simulation.supply_input))
             checker_grid = offgrid_planner.optimize_grid(grid_input)
@@ -332,11 +379,16 @@ class WorkerRunOptimizer:
         while (
             not all(minigrid_id is None for minigrid_id, _g, _s in slots)
             or executed_simulations < db_exploration.minigrids_found
+            and not db_exploration.status == ExplorationStatus.STOPPED  # type: ignore
         ):
             # TODO: check global variable that finishes the thread if set
             time.sleep(1)
 
             for i, (minigrid_id, checker_grid, checker_supply) in enumerate(slots):
+                if db_exploration.status == ExplorationStatus.STOPPED:  # type: ignore
+                    self._result = None
+                    return self._result
+
                 # TODO: I think this can be deleted!
                 # If the slot is empty, fill it up with a remaining simulation
                 if not minigrid_id and not last_bucket:
@@ -376,6 +428,13 @@ class WorkerRunOptimizer:
 
                 # Slot not empty: check if either the grid or the supply optimizers have finished
                 else:
+                    if not minigrid_id:
+                        continue
+
+                    if db_exploration.status == ExplorationStatus.STOPPED:  # type: ignore
+                        self._result = None
+                        return self._result
+
                     db_simulation = self._db.get(Simulation, minigrid_id)
 
                     assert db_simulation
@@ -452,6 +511,7 @@ class WorkerRunOptimizer:
             if (
                 all(minigrid_id is None for minigrid_id, _g, _s in slots)
                 and executed_simulations < db_exploration.minigrids_found
+                and not db_exploration.status == ExplorationStatus.STOPPED  # type: ignore
             ):
                 statement = sqlmodel.select(Simulation).where(
                     Simulation.exploration_id == self._exploration_id,
@@ -513,7 +573,10 @@ class WorkerProcessSimulationResults:
         )
 
         # Wait until some simulations are available in the DB
-        while not self._db.exec(statement).all():
+        while (
+            not self._db.exec(statement).all()
+            and db_exploration.status != ExplorationStatus.STOPPED
+        ):
             time.sleep(1)
 
         num_processed = 0
@@ -524,10 +587,21 @@ class WorkerProcessSimulationResults:
                 "Please check the clustering step."
             )
 
-        while num_processed < db_exploration.minigrids_found:
+        if db_exploration.status == ExplorationStatus.STOPPED:
+            self._result = None
+            return self._result
+
+        while (
+            num_processed < db_exploration.minigrids_found
+            and not db_exploration.status == ExplorationStatus.STOPPED
+        ):  # type: ignore
             simulations_to_process = self._db.exec(statement).all()
 
             for simulation in simulations_to_process:
+                if db_exploration.status == ExplorationStatus.STOPPED:  # type: ignore
+                    self._result = None
+                    return self._result
+
                 if simulation.status == SimulationStatus.FINISHED:
                     sim_results = self.process_simulation_results(simulation)
                     cluster = self._db.exec(
@@ -554,6 +628,15 @@ class WorkerProcessSimulationResults:
                     self._db.refresh(simulation)
                     num_processed += 1
 
+    def _project_inputs(self) -> dict[str, typing.Any]:
+        ProjectKeys: list[str] = ["n_days", "interest_rate", "tax", "lifetime"]
+        ProjectJson: dict[str, typing.Any] = {}
+        for key in ProjectKeys:
+            value = getattr(self.project, key)
+            ProjectJson.update({key: value})
+
+        return ProjectJson
+
     def process_simulation_results(self, simulation: Simulation) -> project_result.ResultsSummary:
         self.project = project_result.Project(id=simulation.id)
         grid_input = grid.GridInput.model_validate_json(simulation.grid_input)
@@ -575,6 +658,8 @@ class WorkerProcessSimulationResults:
         self.project.grid_results()
         self.project.supply_results()
 
+        simulation.project_input = json.dumps(self._project_inputs())
+
         return self.project.get_results_summary()
 
 
@@ -583,7 +668,7 @@ def worker_exploration(parameters: ExplorationParameters, exploration_id: pydant
     them finish."""
 
     with sqlmodel.Session(db.get_engine()) as db_session:
-        worker_clusters = WorkerFindClusters(parameters)
+        worker_clusters = WorkerFindClusters(parameters, exploration_id)
         thread_clusters = threading.Thread(
             target=worker_clusters, name=f"clusters/{exploration_id}"
         )
@@ -658,32 +743,16 @@ def start_exploration(
     db.commit()
     db.refresh(db_exploration)
 
-    thread = threading.Thread(
-        target=worker_exploration,  # the function, not its result
-        args=(parameters, db_exploration.id),
-        name=f"exploration/{db_exploration.id}",
-    )
-    thread.start()
+    if db_exploration.status != ExplorationStatus.STOPPED:  # type: ignore
+        thread = threading.Thread(
+            target=worker_exploration,
+            args=(parameters, db_exploration.id),
+            name=f"exploration/{db_exploration.id}",
+        )
+        thread.start()
 
     # We don't wait until the thread finishes, we want to return asap
     return db_exploration.id
-
-
-def stop_exploration(db: db.Session, exploration_id: pydantic.UUID4) -> None | ExplorationError:
-    # TODO: set global, thread-safe variable that indicates to threads to kill themselves
-
-    return None
-
-
-# def check_exploration(
-#     db: db.Session, exploration_id: pydantic.UUID4
-# ) -> tuple[Exploration, list[Simulation]] | ExplorationError:
-#     """Returns the input and results for all the simulations that have already finished in the
-#     current exploration."""
-
-#     # TODO: retrieve from the DB the current state of the current exploration and its simulations
-
-#     pass
 
 
 if __name__ == "__main__":

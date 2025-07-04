@@ -1,6 +1,4 @@
 import datetime
-import decimal
-import enum
 import uuid
 
 import fastapi
@@ -21,64 +19,68 @@ from app.explorations.domain import (
     ExplorationError,
     ExplorationParameters,
     start_exploration,
+    Exploration,
+    Simulation,
+    Cluster,
+    SimulationStatus,
+    ExplorationStatus,
+    ProjectStatus,
 )
 
-
+# TODO: Review all models make consistent and review field values and units
 ####################################################################################################
 ###   MODELS AND DB ENTITIES   #####################################################################
 ####################################################################################################
 
 
-class ProjectStatus(enum.Enum):
-    POTENTIAL = "potential"
-    PROJECT = "project"
-    MONITORING = "monitoring"
-
-
-class ProjectStatusUpdate(pydantic.BaseModel):
+class PotentialMinigridStatusUpdate(pydantic.BaseModel):
     id: pydantic.UUID4
     status: ProjectStatus
-
-
-class PotentialProject(sqlmodel.SQLModel):
-    id: pydantic.UUID4
-    status: ProjectStatus
-    # TODO: Define list of "inputs" and "outputs/results" equal to RLI models
 
 
 class PotentialMinigrid(sqlmodel.SQLModel):
     id: pydantic.UUID4
+    status: ProjectStatus
+    project_input: str | None
+    grid_input: str | None
+    supply_input: str | None
+    grid_results: str | None
+    supply_results: str | None
 
-    region: str
 
-    consumer_count: int
+class PotentialMinigridResults(sqlmodel.SQLModel):
+    id: pydantic.UUID4
 
-    diameter_max: float
+    province: str
+
+    num_buildings: int
+
+    distance_to_grid_m: float
     """Euclidean distance (units: meter) between the two most distant consumers."""
 
     distance_from_grid: float
     """Units: meter."""
 
-    distance_from_road: float
+    avg_distance_to_road_m: float
     """Units: meter."""
 
     # TODO: in this field and the following, check and use the units returned by the optimizers.
-    lcoe: float
+    lcoe: float | None
     """Levelized cost of energy. Units: $/kWh."""
 
-    capex: decimal.Decimal
+    capex: float | None
     """Capital expenditure. Units: $US."""
 
-    res: float = sqlmodel.Field(ge=0.0, le=100.0)
+    res: float | None = sqlmodel.Field(ge=0.0, le=100.0)
     """Renewable energy share."""
 
-    co2_savings: float
+    co2_savings: float | None
     """CO2 emission savings. Units: tonne/year."""
 
-    consumption_total: float
+    consumption_total: float | None
     """Total consumption. Units: kWh/year."""
 
-    centroid: geopydantic.Point
+    centroid: geopydantic.Point | None
 
 
 class ExistingMinigrid(sqlmodel.SQLModel):
@@ -97,24 +99,17 @@ class GridDistributionLineResponse(grid.GridDistributionLineBase, geography.HasL
     geography: geopydantic.LineString
 
 
-class ExplorationStatus(str, enum.Enum):
-    RUNNING = "RUNNING"
-    STOPPED = "STOPPED"
-    FINISHED = "FINISHED"
-    FAILED = "FAILED"
-
-
 class ExplorationResult(sqlmodel.SQLModel):
     status: ExplorationStatus
     starting_time: datetime.datetime
-    current_duration: datetime.timedelta | None = None
-    estimated_duration: datetime.timedelta | None = None
+    current_duration: str | None = None
+    estimated_duration: str | None = None
     clusters_found: int | None = None
     minigrids_found: int | None = None
     minigrids_analyzed: int | None = None
     minigrids_calculated: int | None = None
     minigrids_errors: int | None = None
-    minigrids: list[PotentialMinigrid] | None = None
+    minigrids: list[PotentialMinigridResults] | None = None
 
 
 class ResponseOk(pydantic.BaseModel):
@@ -126,6 +121,7 @@ class ResponseOk(pydantic.BaseModel):
 ####################################################################################################
 
 
+# TODO: Review and document known errors.
 router = fastapi.APIRouter()
 
 
@@ -138,7 +134,7 @@ def get_grid_network(db: db.Session) -> list[GridDistributionLineResponse]:
             status_code=fastapi.status.HTTP_404_NOT_FOUND, detail="No grid network found."
         )
 
-    return grid_network
+    return [GridDistributionLineResponse.model_validate(line) for line in grid_network]
 
 
 # TODO: Add get roads endpoints.
@@ -243,61 +239,190 @@ def start_new_exploration(db: db.Session, parameters: ExplorationParameters) -> 
     db.exec(sqlmodel.delete(explorations.Simulation))  # type: ignore
     db.commit()
 
+    # TODO: Add error handling..
     id = start_exploration(db=db, parameters=parameters)
     if isinstance(id, ExplorationError):
-        # TODO: raise HTTP error
-        pass
+        raise fastapi.HTTPException(
+            status_code=fastapi.status.HTTP_400_BAD_REQUEST,
+            detail=f"Error starting exploration: {id}",
+        )
 
     return id
 
 
+@router.get("/{exploration_id}")
+def get_exploration_progress(
+    db: db.Session, exploration_id: pydantic.UUID4
+) -> ExplorationResult:  # offset: int
+    """This endpoint is meant to be polled on.
+
+    The offset is on the list of returned analyzed minigrids.
+    """
+
+    stmt = (
+        sqlmodel.select(Exploration, Simulation, Cluster)
+        # join only those Simulation rows that belong to the Exploration and are PROCESSED
+        .outerjoin(
+            Simulation,
+            sqlmodel.and_(
+                Simulation.exploration_id == Exploration.id,
+                Simulation.status == SimulationStatus.PROCESSED,
+            ),
+        )
+        # then bring in any matching Cluster by cluster_id
+        .outerjoin(
+            Cluster,
+            Cluster.cluster_id == Simulation.cluster_id,  # type: ignore
+        )
+        # finally filter to the one Exploration we care about
+        .where(Exploration.id == exploration_id)
+    )
+
+    db_tuples = db.exec(stmt).all()
+
+    if not db_tuples:
+        raise fastapi.HTTPException(
+            status_code=fastapi.status.HTTP_404_NOT_FOUND,
+            detail=f"Exploration with ID {exploration_id} not found or no minigrids processed yet.",
+        )
+
+    potential_minigrids: list[PotentialMinigridResults] = []
+    for _, db_simulation, db_cluster in db_tuples:
+        if db_simulation and db_cluster:
+            potential_minigrids.append(
+                PotentialMinigridResults(
+                    id=db_simulation.id,
+                    province=db_cluster.province,
+                    num_buildings=db_cluster.num_buildings,
+                    distance_to_grid_m=db_cluster.diameter_km,
+                    distance_from_grid=db_cluster.grid_distance_km,
+                    avg_distance_to_road_m=db_cluster.avg_distance_to_road_m,
+                    lcoe=db_cluster.lcoe,
+                    capex=db_cluster.capex,
+                    res=db_cluster.res,
+                    co2_savings=db_cluster.co2_savings,
+                    consumption_total=db_cluster.consumption_total,
+                    centroid=db_cluster.geography,
+                )
+            )
+
+    db_simulations = db.exec(
+        sqlmodel.select(Simulation).where(Simulation.exploration_id == exploration_id)
+    ).all()
+
+    num_calculated = 0
+    num_errors = 0
+    for db_simulation in db_simulations:
+        if db_simulation.status == SimulationStatus.PROCESSED:
+            num_calculated += 1
+        elif (
+            db_simulation.status == SimulationStatus.PROCESSED_ERROR
+            or db_simulation.status == SimulationStatus.STOPPED
+        ):
+            num_errors += 1
+
+    db_exploration = db_tuples[0][0]
+
+    remaining_minigrids = (
+        db_exploration.minigrids_found - (num_calculated + num_errors)
+        if db_exploration.minigrids_found
+        else 0
+    )
+
+    return ExplorationResult(
+        status=db_exploration.status,
+        starting_time=db_exploration.created_at,
+        current_duration=str(db_exploration.optimizer_finished_at - db_exploration.created_at)
+        if db_exploration.optimizer_finished_at
+        else str(datetime.datetime.now() - db_exploration.created_at),
+        estimated_duration=str(db_exploration.optimizer_finished_at - db_exploration.created_at)
+        if db_exploration.optimizer_finished_at
+        else str(
+            datetime.datetime.now()
+            - db_exploration.created_at
+            + datetime.timedelta(minutes=3) * remaining_minigrids
+        ),  # TODO: Estimate duration based on previous runs.
+        clusters_found=db_exploration.clusters_found,
+        minigrids_found=db_exploration.minigrids_found,
+        minigrids_analyzed=num_calculated + num_errors,
+        minigrids_calculated=num_calculated,
+        minigrids_errors=num_errors,
+        minigrids=potential_minigrids,
+    )
+
+
+@router.get("/{exploration_id}/minigrids/{potential_minigrid_id}")
+def get_exploration_files(
+    db: db.Session, exploration_id: pydantic.UUID4, potential_minigrid_id: pydantic.UUID4
+) -> PotentialMinigrid:
+    db_simulation = db.exec(
+        sqlmodel.select(Simulation).where(
+            Simulation.id == potential_minigrid_id, Simulation.exploration_id == exploration_id
+        )
+    ).one_or_none()
+
+    if not db_simulation:
+        raise fastapi.HTTPException(
+            status_code=fastapi.status.HTTP_404_NOT_FOUND,
+            detail=f"""Simulation with ID {potential_minigrid_id}
+            not found in exploration with ID {exploration_id}""",
+        )
+
+    result: PotentialMinigrid = PotentialMinigrid(
+        id=db_simulation.id,
+        status=ProjectStatus.POTENTIAL,
+        project_input=db_simulation.project_input,
+        grid_input=db_simulation.grid_input,
+        supply_input=db_simulation.supply_input,
+        grid_results=db_simulation.grid_results,
+        supply_results=db_simulation.supply_results,
+    )
+
+    return PotentialMinigrid.model_validate(result)
+
+
 @router.post("/{exploration_id}/stop")
-def stop_exploration(id: pydantic.UUID4) -> ResponseOk:
-    pass
+def stop_exploration(db: db.Session, exploration_id: pydantic.UUID4) -> ResponseOk:
+    db_exploration = db.exec(
+        sqlmodel.select(Exploration).where(Exploration.id == exploration_id)
+    ).one_or_none()
+
+    if not db_exploration:
+        raise fastapi.HTTPException(
+            status_code=fastapi.status.HTTP_404_NOT_FOUND,
+            detail=f"Exploration with ID {exploration_id} not found.",
+        )
+
+    if db_exploration.status != ExplorationStatus.RUNNING:
+        raise fastapi.HTTPException(
+            status_code=fastapi.status.HTTP_409_CONFLICT,
+            detail=f"Exploration with ID {exploration_id} is not running.",
+        )
+
+    db_exploration.status = ExplorationStatus.STOPPED
+
+    if not db_exploration.optimizer_inputs_generated_at:
+        db_exploration.optimizer_inputs_generated_at = datetime.datetime.now()
+    if not db_exploration.optimizer_finished_at:
+        db_exploration.optimizer_finished_at = datetime.datetime.now()
+
+    db.flush()
+
+    db_exploration_simulations = db.exec(
+        sqlmodel.select(Simulation).where(
+            sqlmodel.and_(
+                Simulation.exploration_id == exploration_id,
+                sqlmodel.or_(
+                    Simulation.status == SimulationStatus.PENDING,
+                    Simulation.status == SimulationStatus.RUNNING,
+                ),
+            )
+        )
+    ).all()
+
+    for db_simulation in db_exploration_simulations:
+        db_simulation.status = SimulationStatus.STOPPED
+
+    db.commit()
 
     return ResponseOk()
-
-
-# # TODO: Merge this endpoint with the one below
-# @router.get("/{exploration_id}/estimation")
-# def get_exploration_estimation(exploration_id: pydantic.UUID6) -> ExplorationEstimationResult:
-#     # TODO: put some meaningful value here
-#     result = ExplorationEstimationResult(
-#         num_of_minigrids=random.randint(40, 90),
-#         duration=datetime.timedelta(random.randint(10, 120)),
-#     )
-
-#     return result
-
-
-# @router.get("/{exploration_id}")
-# def get_exploration_progress(exploration_id: pydantic.UUID4, offset: int) -> ExplorationResult:
-#     """This endpoint is meant to be polled on.
-
-#     The offset is on the list of returned analyzed minigrids.
-#     """
-#     # TODO: check exploration status
-
-#     pass
-
-
-# @router.get("/{exploration_id}/minigrids/{grid_id}/supply")
-# def get_exploration_supply(
-#     exploration_id: pydantic.UUID4, grid_id: pydantic.UUID4
-# ) -> supply.SupplyDescriptor:
-#     pass
-
-
-# @router.get("/{exploration_id}/minigrids/{grid_id}/grid")
-# def get_exploration_grid(
-#     exploration_id: pydantic.UUID4, grid_id: pydantic.UUID4
-# ) -> grid.GridDescriptor:
-#     pass
-
-
-@router.put("/{project_id}/update")
-def update_project_status(id: pydantic.UUID4, status: ProjectStatus) -> ProjectStatusUpdate:
-    # TODO: Get project from DB & update status.
-    updated_project = ProjectStatusUpdate(id=id, status=status)
-
-    return updated_project
