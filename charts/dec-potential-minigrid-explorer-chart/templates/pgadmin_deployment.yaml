@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: {{ .Values.project.namespace }}
+  name: {{ .Values.project.name }}-db-pgadmin
+  labels:
+    app: {{ .Values.project.name }}-db-pgadmin
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.project.name }}-db-pgadmin
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.project.name }}-db-pgadmin
+    spec:
+      containers:
+        - name: {{ .Values.project.name }}-db-pgadmin
+          image: dpage/pgadmin4:8
+          env:
+            - name: PGADMIN_DEFAULT_EMAIL
+              value: {{ .Values.pgadmin.PGADMIN_DEFAULT_EMAIL }}
+            - name: PGADMIN_DEFAULT_PASSWORD
+              value: {{ .Values.pgadmin.PGADMIN_DEFAULT_PASSWORD }}
+            - name: SCRIPT_NAME
+              value: {{ .Values.pgadmin.SCRIPT_NAME }}
+          ports:
+            - containerPort: {{ .Values.pgadmin.targetPort | int }}
+              protocol: TCP
+          volumeMounts:
+            # - name: {{ .Values.project.name }}-pvc-pgadmin
+            #   mountPath: /var/lib/pgadmin
+            # - name: {{ .Values.project.name }}-pgadmin-config
+            - name: {{ .Values.project.name }}-pvc-pgadmin
+              mountPath: /pgadmin4/servers.json
+              subPath: servers.json
+      restartPolicy: Always
+      volumes:
+        - name: {{ .Values.project.name }}-pvc-pgadmin
+          persistentVolumeClaim:
+            claimName: {{ .Values.project.name }}-pvc-pgadmin
+        # - name: {{ .Values.project.name }}-pgadmin-config
+        #   configMap:
+        #     name: {{ .Values.project.name }}-pgadmin-config

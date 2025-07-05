@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.project.name }}-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.project.name }}-api
+  template:
+    metadata:
+      annotations:
+        redeploy-timestamp: "{{ .Values.forceRedeploy }}"
+      labels:
+        app: {{ .Values.project.name }}-api
+    spec:
+      initContainers:
+      - name: {{ .Values.project.name }}-wait-for-db
+        image: busybox
+        command:
+          - /bin/sh
+          - "-c"
+          - |
+            until nc -z $DB_HOST $DB_PORT; do
+              echo "Waiting for PostgreSQL to be ready..."
+              sleep 5
+            done
+        env:
+        - name: DB_HOST
+          value: {{ .Values.postgis.DB_HOST }}
+        - name: DB_PORT
+          value: "{{ .Values.postgis.DB_PORT }}"
+      containers:
+      - name: {{ .Values.project.name }}-api
+        image: "{{ .Values.backend.image.repository }}:{{ .Values.backend.image.tag}}"
+        imagePullPolicy: {{ .Values.backend.image.pullPolicy }}
+        env:
+        - name: DB_HOST
+          value: {{ .Values.postgis.DB_HOST }}
+        - name: DB_PORT
+          value: "{{ .Values.postgis.DB_PORT }}"
+        - name: DB_NAME
+          value: "{{ .Values.postgis.DB_NAME }}"
+        - name: DB_SUPERADMIN_USERNAME
+          value: {{ .Values.postgis.DB_SUPERADMIN_USERNAME }}
+        - name: DB_ROLE_API_SERVICE_USERNAME
+          value: {{ .Values.postgis.DB_ROLE_API_SERVICE_USERNAME }}
+        - name: DB_LOCALE
+          value: {{ .Values.postgis.DB_LOCALE }}
+        - name: DB_ICU_LOCALE
+          value: {{ .Values.postgis.DB_ICU_LOCALE }}
+        - name: API_ACCESS_TOKEN_EXPIRE_MINUTES
+          value: "{{ .Values.backend.API_ACCESS_TOKEN_EXPIRE_MINUTES }}"
+        - name: DB_SUPERADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.project.name }}-secrets
+              key: DB_SUPERADMIN_PASSWORD
+        - name: DB_ROLE_DB_OWNER_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.project.name }}-secrets
+              key: DB_ROLE_DB_OWNER_PASSWORD
+        - name: DB_ROLE_API_SERVICE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.project.name }}-secrets
+              key: DB_ROLE_API_SERVICE_PASSWORD
+        - name: API_JWT_ENCODE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.project.name }}-secrets
+              key: API_JWT_ENCODE_KEY
+        readinessProbe:
+          exec:
+            command:
+              - /bin/sh
+              - "-c"
+              - "nc -z $DB_HOST $DB_PORT"
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          failureThreshold: 3
+        ports:
+        - containerPort: {{ .Values.backend.port | int }}
+          name: web
+          protocol: TCP
+      imagePullSecrets:
+        - name: docker-registry-login
+      restartPolicy: Always

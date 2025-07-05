@@ -1,0 +1,6 @@
+name: dec-potential-minigrid-explorer-chart
+description: Chart to deploy potential minigrid backend
+version: 0.0.1
+apiVersion: v1
+sources:
+  - https://github.com/Aiguasol-coop/potential-minigrid-explorer

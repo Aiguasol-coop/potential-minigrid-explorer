@@ -593,7 +593,7 @@ class WorkerProcessSimulationResults:
 
         while (
             num_processed < db_exploration.minigrids_found
-            and not db_exploration.status == ExplorationStatus.STOPPED
+            and not db_exploration.status == ExplorationStatus.STOPPED  # type:ignore
         ):  # type: ignore
             simulations_to_process = self._db.exec(statement).all()
 

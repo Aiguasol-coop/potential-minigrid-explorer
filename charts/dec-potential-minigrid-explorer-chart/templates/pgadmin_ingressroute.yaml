@@ -1,0 +1,28 @@
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ .Values.project.name }}-auth-server-pgadmin
+spec:
+  forwardAuth:
+    address: http://auth-server.traefik:3000
+    trustForwardHeader: true
+    authResponseHeaders:
+    - X-Auth-User
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ .Values.project.name }}-db-pgadmin-ingress
+spec:
+  entryPoints:
+    - websecure
+  routes:
+  - match: Host(`{{ .Values.project.name }}.datuma.aiguasol.coop`) && PathPrefix(`/pgdb`)
+    kind: Rule
+    services:
+    - name: {{ .Values.project.name }}-db-pgadmin
+      port: {{ .Values.pgadmin.port }}
+    middlewares:
+      - name: {{ .Values.project.name }}-auth-server-pgadmin
+  tls:
+    certResolver: default

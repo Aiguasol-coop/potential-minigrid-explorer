@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.project.name }}-pvc
+  namespace: {{ .Values.project.namespace }}
+spec:
+  storageClassName: cinder-classic
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi

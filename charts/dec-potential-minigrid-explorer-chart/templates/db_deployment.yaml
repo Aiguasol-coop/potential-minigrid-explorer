@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.project.name }}-db
+  namespace: {{ .Values.project.namespace }}
+  labels:
+    app: {{ .Values.project.name }}-db
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.project.name }}-db
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.project.name }}-db
+    spec:
+      containers:
+      - name: {{ .Values.project.name }}-db
+        image: postgis/postgis:17-3.5
+        env:
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.project.name }}-secrets
+              key: DB_SUPERADMIN_PASSWORD
+        - name: PGDATA
+          value: "{{ .Values.postgis.pgDataBasePath }}/{{ .Values.postgis.pgDataSubPath }}"
+        - name: POSTGRES_USER
+          value: {{ .Values.postgis.DB_SUPERADMIN_USERNAME }}
+        - name: POSTGRES_DB
+          value: "{{ .Values.postgis.DB_NAME }}" # Check if will be necessary to add POSTGRES_SERVER
+        ports:
+        - containerPort: {{ .Values.postgis.DB_PORT | int }}
+        volumeMounts:
+        - name: {{ .Values.project.name }}-db-volume-mount
+          mountPath: "{{ .Values.postgis.pgDataBasePath }}/{{ .Values.postgis.pgDataSubPath }}" #/var/lib/postgresql/data
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - postgres
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: {{ .Values.project.name }}-db-volume-mount
+        persistentVolumeClaim:
+          claimName: {{ .Values.project.name }}-pvc

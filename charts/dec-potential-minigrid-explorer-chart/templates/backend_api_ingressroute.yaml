@@ -1,0 +1,40 @@
+apiVersion: traefik.containo.us/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ .Values.project.name }}-api-stripprefix
+spec:
+  stripPrefix:
+    prefixes:
+      - /{{ .Values.project.name }}
+---
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ .Values.project.name }}-api-ingressroute
+spec:
+  entryPoints:
+    - websecure
+  routes:
+  - match: Host(`{{ .Values.project.name }}.datuma.aiguasol.coop`) && PathPrefix(`/`)
+    kind: Rule
+    services:
+    - name: {{ .Values.project.name }}-api
+      port: {{ .Values.backend.port | int }}
+    middlewares:
+      - name: {{ .Values.project.name }}-api-stripprefix
+  - match: Host(`{{ .Values.project.name }}.datuma.aiguasol.coop`) && PathPrefix(`/docs`)
+    kind: Rule
+    services:
+    - name: {{ .Values.project.name }}-api
+      port: {{ .Values.backend.port | int }}
+    middlewares:
+      - name: {{ .Values.project.name }}-api-stripprefix
+  - match: Host(`{{ .Values.project.name }}.datuma.aiguasol.coop`) && PathPrefix(`/openapi.json`)
+    kind: Rule
+    services:
+    - name: {{ .Values.project.name }}-api
+      port: {{ .Values.backend.port | int }}
+  tls:
+    certResolver: default
+  headers:
+    X-Forwarded-Proto: "https"

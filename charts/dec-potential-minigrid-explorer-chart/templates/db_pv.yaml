@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ .Values.project.name }}-pv
+  namespace: {{ .Values.project.namespace }}
+  labels:
+    type: local
+spec:
+  storageClassName: cinder-classic
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "{{ .Values.postgis.pgDataBasePath }}/{{ .Values.postgis.pgDataSubPath }}"
+  persistentVolumeReclaimPolicy: Delete
