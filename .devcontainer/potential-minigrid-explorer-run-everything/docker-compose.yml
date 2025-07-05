@@ -9,7 +9,9 @@ x-environment: &global_env
   DB_LOCALE: en_US.utf8
   DB_ICU_LOCALE: en-US-x-icu
 
-  SERVICE_OFFGRID_PLANNER_URL: http://host.docker.internal:5001 #https://optimizer-offgridplanner-app.apps2.rl-institut.de
+  SERVICE_OFFGRID_PLANNER_URL: "https://potential-optimizer.datuma.aiguasol.coop/"
+  # http://host.docker.internal:5001
+  #https://optimizer-offgridplanner-app.apps2.rl-institut.de
 
 services:
   env-starter:
