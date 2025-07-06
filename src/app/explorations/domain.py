@@ -112,7 +112,7 @@ class Simulation(sqlmodel.SQLModel, table=True):
 
     project_status: ProjectStatus = sqlmodel.Field(
         default=ProjectStatus.POTENTIAL,
-        sa_column=sqlalchemy.Column(sqlalchemy.Enum(SimulationStatus), nullable=False),
+        sa_column=sqlalchemy.Column(sqlalchemy.Enum(ProjectStatus), nullable=False),
     )
 
     created_at: datetime.datetime = sqlmodel.Field(default_factory=lambda: datetime.datetime.now())
@@ -283,9 +283,9 @@ class WorkerGenerateOptimizerInputs:
 
         import pathlib
 
-        input_json = pathlib.Path("./tests/examples/grid_input_example.json").read_text()
+        input_json = pathlib.Path("app/src/tests/examples/grid_input_example.json").read_text()
         grid_input = grid.GridInput.model_validate_json(input_json)
-        input_json = pathlib.Path("./tests/examples/supply_input_example.json").read_text()
+        input_json = pathlib.Path("app/src/tests/examples/supply_input_example.json").read_text()
         supply_input = supply.SupplyInput.model_validate_json(input_json)
 
         ### END of FAKE code

@@ -168,7 +168,7 @@ def clean_building_polygons(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
 
 def populate_db(db_session: sqlmodel.Session) -> None:
-    raw = os.path.join(os.getcwd(), "src", "scripts", "raw_data")
+    raw = os.path.join(os.getcwd(), "app", "src", "scripts", "raw_data")
     shp_files = {f[:-4]: f for f in os.listdir(raw) if f.endswith(".shp")}
     files_by_model = {}
     for basename, model in CLASS_DICT.items():

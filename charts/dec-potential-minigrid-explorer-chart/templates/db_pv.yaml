@@ -8,7 +8,7 @@ metadata:
 spec:
   storageClassName: cinder-classic
   capacity:
-    storage: 1Gi
+    storage: 6Gi
   accessModes:
     - ReadWriteOnce
   hostPath:

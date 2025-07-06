@@ -73,4 +73,4 @@ EXPOSE 8000
 CMD [ "sh", "-c", "sleep 0 \
     && python /app/src/scripts/db_run_sql_files.py /app/database/postgres-setup.d \
     && python /app/src/scripts/db_load_data.py \
-    && uvicorn main:api --app-dir /app/src/app/ --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"]
+    && uvicorn main:api --app-dir /app/src/app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"]

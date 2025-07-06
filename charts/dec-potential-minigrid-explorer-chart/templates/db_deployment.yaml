@@ -34,7 +34,7 @@ spec:
         - containerPort: {{ .Values.postgis.DB_PORT | int }}
         volumeMounts:
         - name: {{ .Values.project.name }}-db-volume-mount
-          mountPath: "{{ .Values.postgis.pgDataBasePath }}" #/var/lib/postgresql/data
+          mountPath: "{{ .Values.postgis.pgDataBasePath }}/{{ .Values.postgis.pgDataSubPath }}" #/var/lib/postgresql/data
         livenessProbe:
           exec:
             command:
