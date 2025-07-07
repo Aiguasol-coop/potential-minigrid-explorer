@@ -166,4 +166,5 @@ jobs:
             --install \
             --namespace dec \
             --values ./environments/testing/helm-values.yaml \
-            --set-string forceRedeploy=$(d
+            --set-string forceRedeploy=$(date +%s) \
+            --kubeconfig .kube/config
