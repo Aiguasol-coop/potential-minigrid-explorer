@@ -9,10 +9,10 @@
     "workspaceFolder": "/workspaces/potential-minigrid-explorer",
     "features": {
         // docker-outside-of-docker: to access a testcontainer run on the host machine.
-        "ghcr.io/devcontainers/features/docker-outside-of-docker:1": { },
-        "ghcr.io/gvatsal60/dev-container-features/pre-commit:1": { },
-        "ghcr.io/va-h/devcontainers-features/uv:1": { },
-        "ghcr.io/guiyomh/features/just:0": { },
+        "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
+        "ghcr.io/gvatsal60/dev-container-features/pre-commit:1": {},
+        "ghcr.io/va-h/devcontainers-features/uv:1": {},
+        "ghcr.io/guiyomh/features/just:0": {},
         "ghcr.io/robbert229/devcontainer-features/postgresql-client:1": {
             "version": "17"
         }
@@ -47,8 +47,8 @@
                 "editorconfig.editorconfig",
                 // Run commands when a file is saved
                 "emeraldwalk.RunOnSave",
-                // DBML syntax highlighter and SQL <-> DBML conversion
-                "matt-meyers.vscode-dbml",
+                // Replacement for Todo Tree (which is no longer maintained and causes a number of problems)
+                "ExodiusStudios.comment-anchors",
                 // Git Graph
                 "mhutchie.git-graph",
                 // Dockerfile syntax highlighter, linter and formatter (and probably more)

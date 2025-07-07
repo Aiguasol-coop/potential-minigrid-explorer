@@ -4,7 +4,11 @@ import sqlmodel
 import app.db.helpers as db
 import app.settings
 
-from scripts.generators.populate_db import populate_db
+# Import table definitions for create_all()
+import app.grid.domain  # type: ignore
+import app.explorations.domain  # type: ignore
+
+from scripts.db_populate import populate_db
 
 
 def get_engine() -> sqlalchemy.Engine:

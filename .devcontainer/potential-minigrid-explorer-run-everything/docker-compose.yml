@@ -9,13 +9,17 @@ x-environment: &global_env
   DB_LOCALE: en_US.utf8
   DB_ICU_LOCALE: en-US-x-icu
 
+  SERVICE_OFFGRID_PLANNER_URL: "https://potential-optimizer.datuma.aiguasol.coop"
+  # http://host.docker.internal:5001
+  #https://optimizer-offgridplanner-app.apps2.rl-institut.de
+
 services:
   env-starter:
     image: alpine
     platform: linux/amd64
     restart: no
     healthcheck:
-      test: "[ -f /run/secrets/db_superadmin_password ] && [ -f /workspaces/potential-minigrid-explorer/.env ]"
+      test: "[ -f /run/secrets/db_superadmin_password ]"
       interval: 1s
       retries: 5
       start_period: 0s
@@ -41,6 +45,8 @@ services:
     platform: linux/amd64
     depends_on:
       - env-starter
+    environment:
+      <<: *global_env
     volumes:
       - ../..:/workspaces/potential-minigrid-explorer:cached
       - secrets_volume:/run/secrets:ro
@@ -67,25 +73,6 @@ services:
     ports:
       - "${DB_PORT}:5432"
 
-  db-automatic:
-    image: postgis/postgis:17-3.5
-    platform: linux/amd64
-    container_name: postgres-automatic-testing
-    restart: unless-stopped
-    depends_on:
-      env-starter:
-        condition: service_healthy
-    environment:
-      <<: *global_env
-      POSTGRES_USER: ${DB_SUPERADMIN_USERNAME}
-      POSTGRES_PASSWORD_FILE: /run/secrets/db_superadmin_password
-    volumes:
-      - secrets_volume:/run/secrets:ro
-      - ../../database/postgres-setup.d:/docker-entrypoint-initdb.d:ro
-      - db_automatic_volume:/var/lib/postgresql/data
-    ports:
-      - "54321:5432"
-
   pgadmin:
     image: dpage/pgadmin4:8
     container_name: pgadmin
@@ -108,9 +95,6 @@ volumes:
 
   db_interactive_volume:
     name: dec_potential_db_interactive
-
-  db_automatic_volume:
-    name: dec_potential_db_automatic
 
   pgadmin_data:
     name: dec_potential_pgadmin_data

@@ -1,8 +1,4 @@
-{
-    "server_info": "grid",
-    "id": "e709e0e7-0f41-4efa-881e-0e178ea22c7d",
-    "status": "DONE",
-    "results": {
+    {
         "nodes": {
             "latitude": [
                 "9.204625",
@@ -2468,4 +2464,3 @@
             ]
         }
     }
-}

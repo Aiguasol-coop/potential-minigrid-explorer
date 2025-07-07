@@ -3,6 +3,7 @@ import enum
 import json
 import typing
 
+
 import pydantic
 
 
@@ -76,6 +77,9 @@ class Parameters(pydantic.BaseModel):
     max_load: float | None = None
     min_efficiency: float | None = None
     max_efficiency: float | None = None
+    capex: float | None = None
+    opex: float | None = None
+    lifetime: float | None = None
 
 
 class Component(pydantic.BaseModel):
@@ -102,23 +106,6 @@ class ScalarKey(str, enum.Enum):
     invest = "invest"
 
 
-class ResultKey(str, enum.Enum):
-    battery_none = "battery__None"
-    battery_electricity_dc = "battery__electricity_dc"
-    diesel_genset_electricity_ac = "diesel_genset__electricity_ac"
-    electricity_ac_demand = "electricity_ac__electricity_demand"
-    electricity_ac_rectifier = "electricity_ac__rectifier"
-    electricity_ac_surplus = "electricity_ac__surplus"
-    electricity_dc_battery = "electricity_dc__battery"
-    electricity_dc_inverter = "electricity_dc__inverter"
-    fuel_diesel_genset = "fuel__diesel_genset"
-    fuel_source_fuel = "fuel_source__fuel"
-    inverter_electricity_ac = "inverter__electricity_ac"
-    pv_electricity_dc = "pv__electricity_dc"
-    rectifier_electricity_dc = "rectifier__electricity_dc"
-    shortage_electricity_ac = "shortage__electricity_ac"
-
-
 class ResultItem(pydantic.BaseModel):
     scalars: dict[ScalarKey, float]
     sequences: list[float]
@@ -131,56 +118,18 @@ class ResultItem(pydantic.BaseModel):
         return v
 
 
-class ServerInfo(str, enum.Enum):
-    grid = "grid"
-    supply = "supply"
-
-
-class RequestStatus(str, enum.Enum):
-    pending = "PENDING"
-    done = "DONE"
-    # TODO: add all the states
-
-
-class SupplyOutput(pydantic.BaseModel):
-    server_info: ServerInfo | None
-    id: str
-    status: RequestStatus
-    results: dict[ResultKey, ResultItem] | None
-
-
-if __name__ == "__main__":
-    import pathlib
-    import time
-
-    import httpx
-
-    input_json = pathlib.Path("./tests/examples/supply_input_example.json").read_text()
-    supply_input = SupplyInput.model_validate_json(input_json)
-    # print(supply.model_dump())
-
-    response_send = httpx.post(
-        url="https://optimizer-offgridplanner-app.apps2.rl-institut.de/sendjson/supply",
-        json=supply_input.model_dump(mode="json"),
-    )
-    print(f"send response status code: {response_send.status_code}")
-
-    if response_send.status_code != 200:
-        exit(0)
-
-    result_send = SupplyOutput.model_validate(response_send.json())
-
-    time.sleep(20)
-    response_check = httpx.get(
-        url=f"https://optimizer-offgridplanner-app.apps2.rl-institut.de/check/{result_send.id}",
-    )
-    print(f"check response status code: {response_check.status_code}")
-
-    if response_check.status_code != 200:
-        exit(0)
-
-    supply_output = SupplyOutput.model_validate(response_check.json())
-    # Write the output to a JSON file
-    output_path = pathlib.Path("./supply_output_from_service.json")
-    output_path.write_text(supply_output.model_dump_json(indent=2))
-    print(f"Supply output written to {output_path}")
+class SupplyResult(pydantic.BaseModel):
+    battery__None: ResultItem | None = None
+    battery__electricity_dc: ResultItem | None = None
+    diesel_genset__electricity_ac: ResultItem | None = None
+    electricity_ac__electricity_demand: ResultItem | None = None
+    electricity_ac__rectifier: ResultItem | None = None
+    electricity_ac__surplus: ResultItem | None = None
+    electricity_dc__battery: ResultItem | None = None
+    electricity_dc__inverter: ResultItem | None = None
+    fuel__diesel_genset: ResultItem | None = None
+    fuel_source__fuel: ResultItem | None = None
+    inverter__electricity_ac: ResultItem | None = None
+    pv__electricity_dc: ResultItem | None = None
+    rectifier__electricity_dc: ResultItem | None = None
+    shortage__electricity_ac: ResultItem | None = None
