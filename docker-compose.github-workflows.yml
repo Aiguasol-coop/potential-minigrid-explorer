@@ -15,7 +15,7 @@ x-environment: &global_env
   DB_SUPERADMIN_PASSWORD: ${DB_SUPERADMIN_PASSWORD}
 
 services:
-  db:
+  dec-db:
     image: postgis/postgis:17-3.5
     environment:
       <<: *global_env
