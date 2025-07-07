@@ -9,6 +9,11 @@ x-environment: &global_env
   DB_ICU_LOCALE: ${DB_ICU_LOCALE}
   SERVICE_OFFGRID_PLANNER_URL: "https://potential-optimizer.datuma.aiguasol.coop"
 
+  API_JWT_ENCODE_KEY: ${API_JWT_ENCODE_KEY}
+  DB_ROLE_API_SERVICE_PASSWORD: ${DB_ROLE_API_SERVICE_PASSWORD}
+  DB_ROLE_DB_OWNER_PASSWORD: ${DB_ROLE_DB_OWNER_PASSWORD}
+  DB_SUPERADMIN_PASSWORD: ${DB_SUPERADMIN_PASSWORD}
+
 services:
   db:
     image: postgis/postgis:17-3.5
