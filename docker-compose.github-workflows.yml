@@ -1,0 +1,37 @@
+x-environment: &global_env
+  DB_HOST: ${DB_HOST}
+  DB_PORT: ${DB_PORT}
+  DB_NAME: ${DB_NAME}
+  DB_SUPERADMIN_USERNAME: ${DB_SUPERADMIN_USERNAME}
+  DB_ROLE_API_SERVICE_USERNAME: ${DB_ROLE_API_SERVICE_USERNAME}
+  API_ACCESS_TOKEN_EXPIRE_MINUTES: ${API_ACCESS_TOKEN_EXPIRE_MINUTES}
+  DB_LOCALE: ${DB_LOCALE}
+  DB_ICU_LOCALE: ${DB_ICU_LOCALE}
+  SERVICE_OFFGRID_PLANNER_URL: "https://potential-optimizer.datuma.aiguasol.coop"
+
+services:
+  db:
+    image: postgis/postgis:17-3.5
+    environment:
+      <<: *global_env
+      POSTGRES_USER: ${DB_SUPERADMIN_USERNAME}
+      POSTGRES_PASSWORD: ${DB_SUPERADMIN_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_SUPERADMIN_USERNAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - ${DB_PORT}:5432
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.testing
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      <<: *global_env
+    ports:
+      - "18080:8000"
