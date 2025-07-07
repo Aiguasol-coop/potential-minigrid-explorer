@@ -180,4 +180,4 @@ secrets/
 database/sandbox/
 
 raw_data
-*values.yaml
+values.yaml

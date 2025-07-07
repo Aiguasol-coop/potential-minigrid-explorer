@@ -22,7 +22,10 @@ spec:
             - name: PGADMIN_DEFAULT_EMAIL
               value: {{ .Values.pgadmin.PGADMIN_DEFAULT_EMAIL }}
             - name: PGADMIN_DEFAULT_PASSWORD
-              value: {{ .Values.pgadmin.PGADMIN_DEFAULT_PASSWORD }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.project.name }}-secrets
+                  key: PGADMIN_DEFAULT_PASSWORD
             - name: SCRIPT_NAME
               value: {{ .Values.pgadmin.SCRIPT_NAME }}
           ports:

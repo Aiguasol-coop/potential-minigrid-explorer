@@ -1,0 +1,33 @@
+# PROJECT CONFIG
+project:
+  name: potential-minigrid-explorer
+  namespace: dec
+
+# BACK-END SERVICE:
+backend:
+  port: "8000"
+  API_ACCESS_TOKEN_EXPIRE_MINUTES: "30"
+  SERVICE_OFFGRID_PLANNER_URL: "https://potential-optimizer.datuma.aiguasol.coop"
+  image:
+    repository: aiguasol/dec_potential_minigrid_explorer
+    pullPolicy: Always
+    tag: latest
+  
+# DB SERVICE:
+postgis:
+  DB_SUPERADMIN_USERNAME: "postgres"
+  DB_ROLE_API_SERVICE_USERNAME: "api_service"
+  pgDataBasePath: "/var/lib/postgresql/data"
+  pgDataSubPath: "dec/db"
+  DB_HOST: potential-minigrid-explorer-db
+  DB_PORT: "5432"
+  DB_NAME: test
+  DB_LOCALE: en_US.utf8
+  DB_ICU_LOCALE: en-US-x-icu
+
+# PGADMIN SERVICE:
+pgadmin:
+  PGADMIN_DEFAULT_EMAIL: "test@example.com"
+  port: "8081"
+  targetPort: "80"
+  SCRIPT_NAME: /pgdb

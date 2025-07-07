@@ -338,6 +338,9 @@ class WorkerRunOptimizer:
         last_bucket = False
         db_simulations = self._db.exec(statement.limit(NUM_SLOTS)).all()
         for i, db_simulation in enumerate(db_simulations):
+            
+            time.sleep(3)
+            
             if db_exploration.status == ExplorationStatus.STOPPED:  # type: ignore
                 self._result = None
                 return self._result
@@ -385,6 +388,9 @@ class WorkerRunOptimizer:
             time.sleep(1)
 
             for i, (minigrid_id, checker_grid, checker_supply) in enumerate(slots):
+                
+                time.sleep(3)
+                
                 if db_exploration.status == ExplorationStatus.STOPPED:  # type: ignore
                     self._result = None
                     return self._result
@@ -520,6 +526,9 @@ class WorkerRunOptimizer:
                 NUM_SIM = min(NUM_SLOTS, db_exploration.minigrids_found - executed_simulations)
                 db_simulations = self._db.exec(statement.limit(NUM_SIM)).all()
                 for i, db_simulation in enumerate(db_simulations):
+                    
+                    time.sleep(3)
+                    
                     grid_input = grid.GridInput.model_validate(json.loads(db_simulation.grid_input))
                     supply_input = supply.SupplyInput.model_validate(
                         json.loads(db_simulation.supply_input)
