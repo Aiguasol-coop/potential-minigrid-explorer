@@ -131,11 +131,11 @@ jobs:
       - name: Create General Secrets
         run: |
           kubectl create secret generic potential-minigrid-explorer-secrets \
-            --from-literal=DB_SUPERADMIN_PASSWORD="${{ secrets.DB_SUPERADMIN_PASSWORD }}" \
-            --from-literal=DB_ROLE_DB_OWNER_PASSWORD="${{ secrets.DB_ROLE_DB_OWNER_PASSWORD }}" \
-            --from-literal=DB_ROLE_API_SERVICE_PASSWORD="${{ secrets.DB_ROLE_API_SERVICE_PASSWORD }}" \
-            --from-literal=API_JWT_ENCODE_KEY="${{ secrets.API_JWT_ENCODE_KEY }}" \
-            --from-literal=PGADMIN_DEFAULT_PASSWORD="${{ secrets.PGADMIN_DEFAULT_PASSWORD }}" \
+            --from-literal=DB_SUPERADMIN_PASSWORD="${{ secrets.WORKFLOW_TEST_DB_SUPERADMIN_PASSWORD }}" \
+            --from-literal=DB_ROLE_DB_OWNER_PASSWORD="${{ secrets.WORKFLOW_TEST_DB_ROLE_DB_OWNER_PASSWORD }}" \
+            --from-literal=DB_ROLE_API_SERVICE_PASSWORD="${{ secrets.WORKFLOW_TEST_DB_ROLE_API_SERVICE_PASSWORD }}" \
+            --from-literal=API_JWT_ENCODE_KEY="${{ secrets.WORKFLOW_TEST_API_JWT_ENCODE_KEY }}" \
+            --from-literal=PGADMIN_DEFAULT_PASSWORD="${{ secrets.WORKFLOW_TEST_PGADMIN_DEFAULT_PASSWORD }}" \
             --namespace=dec \
             --kubeconfig=.kube/config
 
