@@ -34,7 +34,7 @@ services:
       context: .
       dockerfile: Dockerfile.testing
     depends_on:
-      db:
+      dec-db:
         condition: service_healthy
     environment:
       <<: *global_env
