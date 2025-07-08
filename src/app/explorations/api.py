@@ -224,8 +224,8 @@ def start_new_exploration(db: db.Session, parameters: ExplorationParameters) -> 
     """Start a new exploration with the given parameters."""
 
     db_exploration_running = db.exec(
-        sqlmodel.select(explorations.Simulation).where(
-            explorations.Simulation.status == explorations.ExplorationStatus.RUNNING
+        sqlmodel.select(explorations.Exploration).where(
+            explorations.Exploration.status == explorations.ExplorationStatus.RUNNING
         )
     ).first()
     if db_exploration_running:
