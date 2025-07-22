@@ -535,6 +535,7 @@ class WorkerRunOptimizer:
                     )
                     checker_grid = offgrid_planner.optimize_grid(grid_input)
                     checker_supply = offgrid_planner.optimize_supply(supply_input)
+                    db_simulation.status = SimulationStatus.RUNNING
 
                     # TODO: check errors
                     if isinstance(
