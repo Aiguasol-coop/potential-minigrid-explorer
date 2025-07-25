@@ -1,8 +1,6 @@
 # 🏗️ Stage 1: Build the Application
 FROM python:3.13-slim-bookworm AS builder
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-
 # Install:
 # - git, needed for version calculation
 # - gcc + libpq, needed for psycopg
@@ -11,6 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
+
+RUN pip install uv
 
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy
 
@@ -69,7 +69,9 @@ ENV PATH="/app/.venv/bin:$PATH"
 
 EXPOSE 8000
 
+WORKDIR /app
+
 # Run the FastAPI application by default
 CMD [ "sh", "-c", "sleep 0 \
-    && python /app/src/scripts/db_run_sql_files.py /app/database/postgres-setup.d \
-    && uvicorn main:api --app-dir /app/src/app/ --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"]
+    && python src/scripts/db_run_sql_files.py /app/database/postgres-setup.d \
+    && uvicorn main:api --app-dir src/app/ --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"]
