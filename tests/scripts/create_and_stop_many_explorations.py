@@ -24,7 +24,7 @@ def main():
                 print(f"[{count}] Created and stopped exploration {exploration_id}")
             except Exception as e:
                 print("Error:", e)
-            time.sleep(0.5)
+            time.sleep(5)
 
 
 if __name__ == "__main__":

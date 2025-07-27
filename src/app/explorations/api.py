@@ -19,6 +19,7 @@ from app.explorations.domain import (
     ExplorationError,
     ExplorationParameters,
     start_exploration,
+    stop_exploration_threads,
     Exploration,
     Simulation,
     Cluster,
@@ -398,6 +399,8 @@ def stop_exploration(db: db.Session, exploration_id: pydantic.UUID4) -> Response
             status_code=fastapi.status.HTTP_409_CONFLICT,
             detail=f"Exploration with ID {exploration_id} is not running.",
         )
+
+    stop_exploration_threads(db_exploration.id)
 
     db_exploration.status = ExplorationStatus.STOPPED
 
