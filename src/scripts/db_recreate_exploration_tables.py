@@ -5,9 +5,7 @@ import app.db.helpers as db
 import app.settings
 
 # Import table definitions for create_all()
-import app.grid.domain  # type: ignore
-
-from scripts.db_populate import populate_db
+import app.explorations.domain  # type: ignore
 
 
 def get_engine() -> sqlalchemy.Engine:
@@ -32,15 +30,10 @@ def get_engine() -> sqlalchemy.Engine:
 def main() -> None:
     engine = get_engine()
 
-    db.drop_tables(engine, "main", ["buildings", "grid_distribution_lines", "mini_grids"])
+    db.drop_tables(engine, "main", ["cluster", "exploration", "simulation"])
     db.drop_all_custom_types(engine, "main")
 
     sqlmodel.SQLModel.metadata.create_all(engine)
-
-    with sqlmodel.Session(bind=engine) as session:
-        # TODO: Add roads to DB
-        # Load data from shp files:
-        populate_db(db_session=session)
 
 
 if __name__ == "__main__":

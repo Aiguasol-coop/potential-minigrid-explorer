@@ -19,7 +19,7 @@ from app.explorations.domain import (
     ExplorationError,
     ExplorationParameters,
     start_exploration,
-    stop_exploration_threads,
+    stop_exploration,
     Exploration,
     Simulation,
     Cluster,
@@ -109,7 +109,7 @@ class ExplorationResult(sqlmodel.SQLModel):
     minigrids_found: int | None = None
     minigrids_analyzed: int | None = None
     minigrids_calculated: int | None = None
-    minigrids_errors: int | None = None
+    minigrids_aborted: int | None = None
     minigrids: list[PotentialMinigridResults] | None = None
 
 
@@ -262,21 +262,20 @@ def get_exploration_progress(
 
     stmt = (
         sqlmodel.select(Exploration, Simulation, Cluster)
-        # join only those Simulation rows that belong to the Exploration and are PROCESSED
         .outerjoin(
             Simulation,
             sqlmodel.and_(
-                Simulation.exploration_id == Exploration.id,
-                Simulation.status == SimulationStatus.PROCESSED,
+                Simulation.exploration_id == Exploration.id,  # type: ignore
+                Simulation.status == SimulationStatus.PROCESSED,  # type: ignore
             ),
         )
-        # then bring in any matching Cluster by cluster_id
         .outerjoin(
             Cluster,
             Cluster.cluster_id == Simulation.cluster_id,  # type: ignore
         )
-        # finally filter to the one Exploration we care about
-        .where(Exploration.id == exploration_id)
+        .where(
+            Exploration.id == exploration_id,
+        )
     )
 
     db_tuples = db.exec(stmt).all()
@@ -312,20 +311,20 @@ def get_exploration_progress(
     ).all()
 
     num_calculated = 0
-    num_errors = 0
+    num_aborted = 0
     for db_simulation in db_simulations:
         if db_simulation.status == SimulationStatus.PROCESSED:
             num_calculated += 1
         elif (
-            db_simulation.status == SimulationStatus.PROCESSED_ERROR
+            db_simulation.status == SimulationStatus.ERROR
             or db_simulation.status == SimulationStatus.STOPPED
         ):
-            num_errors += 1
+            num_aborted += 1
 
     db_exploration = db_tuples[0][0]
 
     remaining_minigrids = (
-        db_exploration.minigrids_found - (num_calculated + num_errors)
+        db_exploration.minigrids_found - (num_calculated + num_aborted)
         if db_exploration.minigrids_found
         else 0
     )
@@ -345,9 +344,9 @@ def get_exploration_progress(
         ),  # TODO: Estimate duration based on previous runs.
         clusters_found=db_exploration.clusters_found,
         minigrids_found=db_exploration.minigrids_found,
-        minigrids_analyzed=num_calculated + num_errors,
+        minigrids_analyzed=num_calculated + num_aborted,
         minigrids_calculated=num_calculated,
-        minigrids_errors=num_errors,
+        minigrids_aborted=num_aborted,
         minigrids=potential_minigrids,
     )
 
@@ -383,7 +382,7 @@ def get_exploration_files(
 
 
 @router.post("/{exploration_id}/stop")
-def stop_exploration(db: db.Session, exploration_id: pydantic.UUID4) -> ResponseOk:
+def stop_current_exploration(db: db.Session, exploration_id: pydantic.UUID4) -> ResponseOk:
     db_exploration = db.exec(
         sqlmodel.select(Exploration).where(Exploration.id == exploration_id)
     ).one_or_none()
@@ -400,32 +399,6 @@ def stop_exploration(db: db.Session, exploration_id: pydantic.UUID4) -> Response
             detail=f"Exploration with ID {exploration_id} is not running.",
         )
 
-    stop_exploration_threads(db_exploration.id)
-
-    db_exploration.status = ExplorationStatus.STOPPED
-
-    if not db_exploration.optimizer_inputs_generated_at:
-        db_exploration.optimizer_inputs_generated_at = datetime.datetime.now()
-    if not db_exploration.optimizer_finished_at:
-        db_exploration.optimizer_finished_at = datetime.datetime.now()
-
-    db.flush()
-
-    db_exploration_simulations = db.exec(
-        sqlmodel.select(Simulation).where(
-            sqlmodel.and_(
-                Simulation.exploration_id == exploration_id,
-                sqlmodel.or_(
-                    Simulation.status == SimulationStatus.PENDING,
-                    Simulation.status == SimulationStatus.RUNNING,
-                ),
-            )
-        )
-    ).all()
-
-    for db_simulation in db_exploration_simulations:
-        db_simulation.status = SimulationStatus.STOPPED
-
-    db.commit()
+    stop_exploration(db, db_exploration.id)
 
     return ResponseOk()

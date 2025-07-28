@@ -16,14 +16,20 @@ from app.utils import CustomError
 #
 #   * We've added the check that avoids running the function if not in a testing scenario.
 #   * We only drop constraints and tables from a specific schema (aka namespace).
-def drop_all_tables(engine: sqlalchemy.Engine, schema: str) -> None:
+def drop_tables(
+    engine: sqlalchemy.Engine, schema: str, table_names: list[str] | None = None
+) -> None:
     """(On a live db) drops all foreign key constraints before dropping all tables.
     Workaround for SQLAlchemy not doing DROP ## CASCADE for drop_all()
     (https://github.com/pallets/flask-sqlalchemy/issues/722)
     """
 
     cmdline_arguments = " ".join(sys.argv)
-    if "db_load_data" not in cmdline_arguments and "PYTEST_CURRENT_TEST" not in os.environ:
+    if (
+        "db_load_data" not in cmdline_arguments
+        and "db_recreate_exploration_tables" not in cmdline_arguments
+        and "PYTEST_CURRENT_TEST" not in os.environ
+    ):
         raise CustomError("We're trying to drop all tables from a non-test environment!!")
 
     con = engine.connect()
@@ -37,7 +43,13 @@ def drop_all_tables(engine: sqlalchemy.Engine, schema: str) -> None:
     tables = []
     all_fkeys = []
 
-    for table_name in inspector.get_table_names(schema=schema):
+    existing_tables = set(inspector.get_table_names(schema=schema))
+    if table_names:
+        tables_to_drop = list(set(table_names) & existing_tables)
+    else:
+        tables_to_drop = list(existing_tables)
+
+    for table_name in tables_to_drop:
         fkeys = []
 
         for fkey in inspector.get_foreign_keys(table_name, schema=schema):
@@ -69,7 +81,7 @@ def drop_all_custom_types(engine: sqlalchemy.Engine, schema: str) -> None:
         FROM pg_type t
         JOIN pg_namespace n  ON n.oid = t.typnamespace
         WHERE n.nspname = :schema
-          AND t.typtype IN ('e', 'c', 'd')                    -- e = enum, c = composite, d = domain
+          AND t.typtype IN ('e', 'd')     -- e = enum, d = domain. WE IGNORE c = composite types!
         """
     )
 
