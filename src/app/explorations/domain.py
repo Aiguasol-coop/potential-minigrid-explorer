@@ -180,6 +180,33 @@ class ExplorationError(str, enum.Enum):
     clustering_algorithm_failed = "The clustering algorithm failed"
 
 
+# There are a number of threads (workers). The following table shows what threads read/write/create
+# what cells in the DB. The worker "exploration" creates all the other workers and waits for their
+# finalization. The last three workers run in (P)arallel:
+#
+# exploration              | READ  | simulation (status)
+#   (parent)               | WRITE | exploration (clusters_found_at)
+#                          |       | exploration (optimizer_inputs_generated_at)
+#                          |       | exploration (optimizer_finished_at)
+#                          |       | exploration (status)
+# FindClusters             | READ  | exploration (status)
+#                          | WRITE | cluster (all columns, creates)
+#                          |       | exploration (clusters_found, minigrids_found)
+# GenerateOptimizerInputs  | READ  | exploration (all columns)
+#   (P)                    |       | cluster (all columns)
+#                          | WRITE | simulation (all columns, creates *)
+# RunOptimizer             | READ  | exploration (minigrids_found)
+#   (P)                    |       | simulation (all columns)
+#                          | WRITE | simulation (status *, grid_results, supply_results)
+# ProcessSimulationResults | READ  | exploration (minigrids_found)
+#   (P)                    |       | simulation (status, grid_results, supply_results)
+#                          |       | cluster (all columns)
+#                          | WRITE | cluster (many columns)
+#                          |       | simulation (status *, project_input)
+#
+#
+
+
 class WorkerFindClusters:
     def __init__(self, parameters: ExplorationParameters, exploration_id: pydantic.UUID4):
         self._parameters = parameters
@@ -197,17 +224,15 @@ class WorkerFindClusters:
             #
             ### BEGIN of FAKE code
 
-            if self._stop_event.is_set():
-                self._result = None
-                return self._result
+            FAKE_CLUSTERS_COUNT = 50
+            FAKE_MINIGRIDS_COUNT = 5
 
-            potential_minigrids: list[Cluster] = []
-
-            for i in range(10):
+            for i in range(FAKE_MINIGRIDS_COUNT):
                 if self._stop_event.is_set():
                     self._result = None
                     return self._result
 
+                # We store in the DB only those clusters selected as potential minigrids
                 c = Cluster(
                     cluster_id=i,
                     province="A_province",
@@ -221,13 +246,12 @@ class WorkerFindClusters:
                     buildings=[],
                     pg_geography="POINT(2.0 41.0)",
                 )
-                potential_minigrids.append(c)
                 db_session.add(c)
                 db_session.commit()
                 db_session.refresh(c)
 
-            db_exploration.clusters_found = 50  # fake value
-            db_exploration.minigrids_found = len(potential_minigrids)
+            db_exploration.clusters_found = FAKE_CLUSTERS_COUNT
+            db_exploration.minigrids_found = FAKE_MINIGRIDS_COUNT
             db_session.add(db_exploration)
             db_session.commit()
 
@@ -253,15 +277,10 @@ class WorkerGenerateOptimizerInputs:
 
             assert db_exploration
 
-            if self._stop_event.is_set():
-                self._result = None
-                return self._result
-
             potential_minigrids = db_session.exec(sqlmodel.select(Cluster)).all()
 
             for minigrid in potential_minigrids:
-                # TODO: check global variable that finishes the thread if set
-                if self._stop_event.is_set():  # type: ignore
+                if self._stop_event.is_set():
                     self._result = None
                     return self._result
 
@@ -748,7 +767,7 @@ def worker_exploration(parameters: ExplorationParameters, exploration_id: pydant
         db_session.add(db_exploration)
         db_session.commit()
 
-        # The following 2 workers can run in parallel
+        # The following 3 workers can run in parallel
         worker_inputs = WorkerGenerateOptimizerInputs(exploration_id)
         thread_inputs = threading.Thread(target=worker_inputs)
         register_worker(f"inputs/{exploration_id}", worker_inputs)

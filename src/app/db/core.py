@@ -35,11 +35,8 @@ def get_engine() -> sqlalchemy.Engine:
 
     db_url = f"postgresql+psycopg://{username}:{password}@{host}:{port}/{database}"
 
-    # SERIALIZABLE gives maximum ACID transactional guarantees, see
-    # https://www.postgresql.org/docs/current/transaction-iso.html
     engine = sqlalchemy.create_engine(
         db_url,
-        isolation_level="READ COMMITTED",  # TODO: READ COMMITTED??
         pool_size=10,
         max_overflow=10,
     )
