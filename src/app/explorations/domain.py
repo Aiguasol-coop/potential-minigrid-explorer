@@ -404,7 +404,7 @@ class WorkerRunOptimizer:
                     return self._result
 
                 # Wait some time to not choke the optimizer
-                time.sleep(3)
+                time.sleep(2)
 
                 grid_input = grid.GridInput.model_validate(json.loads(db_simulation.grid_input))
                 supply_input = supply.SupplyInput.model_validate(
@@ -461,7 +461,7 @@ class WorkerRunOptimizer:
                             )
 
                             # Wait some time to not choke the optimizer
-                            time.sleep(3)
+                            time.sleep(2)
 
                             checker_grid = offgrid_planner.optimize_grid(grid_input)
                             checker_supply = offgrid_planner.optimize_supply(supply_input)
@@ -634,7 +634,7 @@ class WorkerProcessSimulationResults:
                         db_session.add(simulation)
                         db_session.commit()
 
-                time.sleep(1)
+                time.sleep(0.5)
 
     def _project_inputs(self) -> dict[str, typing.Any]:
         ProjectKeys: list[str] = ["n_days", "interest_rate", "tax", "lifetime"]
