@@ -37,9 +37,14 @@ db-run-sql-files:
 db-generate tables:
     uv run sqlacodegen --tables {{tables}} postgresql://test:test@db:5432/test
 
+# pass a space-separated list of tables, such as "buildings mini_grids", or "all"
 [group('database')]
-load-data DROP_ALL:
-    uv run db_load_data --drop_all={{DROP_ALL}}
+load-data *tables:
+    uv run -- python src/scripts/db_load_data.py --tables {{tables}}
+
+[group('database')]
+recreate-exploration-tables:
+    uv run db_recreate_exploration_tables
 
 # run the API backend service with reload
 [group('fastapi')]

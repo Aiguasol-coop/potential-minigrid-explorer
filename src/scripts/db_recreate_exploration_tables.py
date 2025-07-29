@@ -1,5 +1,3 @@
-import argparse
-
 import sqlalchemy
 import sqlmodel
 
@@ -7,9 +5,7 @@ import app.db.helpers as db
 import app.settings
 
 # Import table definitions for create_all()
-import app.grid.domain  # type: ignore
-
-from scripts.db_populate import populate_db
+import app.explorations.domain  # type: ignore
 
 
 def get_engine() -> sqlalchemy.Engine:
@@ -31,37 +27,14 @@ def get_engine() -> sqlalchemy.Engine:
     return engine
 
 
-ALL_TABLES = ["buildings", "grid_distribution_lines", "mini_grids"]
-
-
-def main(tables: list[str]) -> None:
+def main() -> None:
     engine = get_engine()
 
-    db.drop_tables(engine, "main", tables)
+    db.drop_tables(engine, "main", ["cluster", "exploration", "simulation"])
     db.drop_all_custom_types(engine, "main")
 
     sqlmodel.SQLModel.metadata.create_all(engine)
 
-    with sqlmodel.Session(bind=engine) as session:
-        # TODO: Add roads to DB
-        # Load data from shp files:
-        populate_db(db_session=session)
-
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Populate selected tables in the database.")
-    parser.add_argument(
-        "--tables",
-        nargs="+",
-        required=True,
-        help='List of table names to populate (e.g., buildings), or "all" for all tables.',
-    )
-    args = parser.parse_args()
-
-    # Handle the special "all" keyword
-    if len(args.tables) == 1 and args.tables[0].lower() == "all":
-        selected_tables = ALL_TABLES
-    else:
-        selected_tables = args.tables
-
-    main(selected_tables)
+    main()

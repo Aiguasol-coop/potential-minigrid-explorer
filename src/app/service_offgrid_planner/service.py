@@ -1,5 +1,6 @@
 import collections.abc as abc
 import enum
+import json.decoder
 import typing
 
 import httpx
@@ -64,27 +65,28 @@ def _send_input_to_optimizer(
             url=f"{settings.service_offgrid_planner_url}/sendjson/{server_info}",
             content=input.model_dump_json(),
         )
-    except httpx.TimeoutException:
+        if response_send.status_code != 200:
+            return ErrorServiceOffgridPlanner.request_failed
+        if isinstance(input, grid.GridInput):
+            result_send = OptimizerOutput[grid.GridResult].model_validate(response_send.json())
+        else:
+            result_send = OptimizerOutput[supply.SupplyResult].model_validate(response_send.json())
+    except (httpx.TimeoutException, json.decoder.JSONDecodeError):
         return ErrorServiceOffgridPlanner.service_unavailable
-
-    result_send = OptimizerOutput[grid.GridResult].model_validate(response_send.json())
-
-    if response_send.status_code != 200:
-        return ErrorServiceOffgridPlanner.request_failed
 
     def checker():
         try:
             response_check = httpx.get(
                 url=f"{settings.service_offgrid_planner_url}/check/{result_send.id}",
             )
-        except httpx.TimeoutException:
+            if response_check.status_code != 200:
+                return ErrorServiceOffgridPlanner.request_failed
+            if isinstance(input, grid.GridInput):
+                output = OptimizerOutput[grid.GridResult].model_validate(response_check.json())
+            else:
+                output = OptimizerOutput[supply.SupplyResult].model_validate(response_check.json())
+        except (httpx.TimeoutException, json.decoder.JSONDecodeError):
             return ErrorServiceOffgridPlanner.service_unavailable
-        if response_check.status_code != 200:
-            return ErrorServiceOffgridPlanner.request_failed
-        if isinstance(input, grid.GridInput):
-            output = OptimizerOutput[grid.GridResult].model_validate(response_check.json())
-        else:
-            output = OptimizerOutput[supply.SupplyResult].model_validate(response_check.json())
         if output.status == RequestStatus.ERROR:
             return ErrorServiceOffgridPlanner.request_failed
 
