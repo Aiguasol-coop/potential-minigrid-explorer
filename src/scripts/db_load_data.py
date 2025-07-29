@@ -1,3 +1,5 @@
+import argparse
+
 import sqlalchemy
 import sqlmodel
 
@@ -29,10 +31,13 @@ def get_engine() -> sqlalchemy.Engine:
     return engine
 
 
-def main() -> None:
+ALL_TABLES = ["buildings", "grid_distribution_lines", "mini_grids"]
+
+
+def main(tables: list[str]) -> None:
     engine = get_engine()
 
-    db.drop_tables(engine, "main", ["buildings", "grid_distribution_lines", "mini_grids"])
+    db.drop_tables(engine, "main", tables)
     db.drop_all_custom_types(engine, "main")
 
     sqlmodel.SQLModel.metadata.create_all(engine)
@@ -44,4 +49,19 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Populate selected tables in the database.")
+    parser.add_argument(
+        "--tables",
+        nargs="+",
+        required=True,
+        help='List of table names to populate (e.g., buildings), or "all" for all tables.',
+    )
+    args = parser.parse_args()
+
+    # Handle the special "all" keyword
+    if len(args.tables) == 1 and args.tables[0].lower() == "all":
+        selected_tables = ALL_TABLES
+    else:
+        selected_tables = args.tables
+
+    main(selected_tables)

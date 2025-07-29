@@ -138,7 +138,6 @@ class Simulation(sqlmodel.SQLModel, table=True):
     status: SimulationStatus = sqlmodel.Field(
         default=None,
         sa_column=sqlalchemy.Column(
-            # sqlalchemy.Enum(SimulationStatus),
             SimulationStatusSql(),
             sqlalchemy.Computed(
                 """
@@ -233,7 +232,7 @@ class ExplorationError(str, enum.Enum):
 #                          |       | exploration (clusters_found, minigrids_found)
 # GenerateOptimizerInputs  | READ  | exploration (all columns)
 #   (P)                    |       | cluster (all columns)
-#                          | WRITE | simulation (all columns, creates *)
+#                          | WRITE | simulation (all columns, creates)
 # RunOptimizer             | READ  | exploration (minigrids_found)
 #   (P)                    |       | simulation (all columns)
 #                          | WRITE | simulation (optimizer_started_at, optimizer_failed_at)
@@ -490,9 +489,6 @@ class WorkerRunOptimizer:
                     # Slot not empty: check if either the grid or the supply optimizers have
                     # finished:
                     else:
-                        # if not minigrid_id:
-                        #     continue
-
                         if self._stop_event.is_set():
                             self._result = None
                             return self._result
@@ -780,14 +776,6 @@ def start_exploration(
 
     # We don't wait until the thread finishes, we want to return asap
     return db_exploration.id
-
-
-# def _get_thread_by_name(name: str) -> threading.Thread | None:
-#     for thread in threading.enumerate():
-#         if thread.name == name:
-#             return thread
-
-#     return None
 
 
 def stop_exploration(db: db.Session, exploration_id: pydantic.UUID4):

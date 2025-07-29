@@ -15,7 +15,7 @@ import sys
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(message)s",
+    format="%(asctime)s %(levelname)s: %(message)s",
     stream=sys.stdout,  # or sys.stderr
 )
 
@@ -53,7 +53,7 @@ def get_session() -> collections.abc.Generator[sqlmodel.Session]:
 def get_logging_session(
     name: str = "Unnamed session",
 ) -> collections.abc.Generator[sqlmodel.Session]:
-    logging.info(f"DB session {name}: BEFORE OPENING, pool status: {get_engine().pool.status()}")
+    logging.info(f"DB session {name}: OPENING, pool status: {get_engine().pool.status()}")
     session = sqlmodel.Session(get_engine())
     try:
         yield session
