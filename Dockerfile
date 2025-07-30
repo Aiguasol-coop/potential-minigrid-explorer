@@ -74,5 +74,5 @@ WORKDIR /app
 # Run the FastAPI application by default
 CMD [ "sh", "-c", "sleep 0 \
     && python src/scripts/db_run_sql_files.py /app/database/postgres-setup.d \
-    && python src/scripts/db_load_data.py --tables exploration simulation cluster \
+    && python src/scripts/db_load_data.py --tables all \
     && uvicorn main:api --app-dir src/app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"]
