@@ -32,7 +32,6 @@ potential-minigrid-explorer = "app.main_alt:main"  # Run the API service without
 settings = "app.settings:main"  # Generate default values for configuration variables
 db_run_sql_files = "scripts.db_run_sql_files:main"  # Run .sql files on the database cluster
 db_load_data = "scripts.db_load_data:main"  # Load data into the database cluster
-db_recreate_exploration_tables = "scripts.db_recreate_exploration_tables:main" # Drops and creates tables related to explorations
 
 [dependency-groups]
 dev = [
