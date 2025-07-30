@@ -70,7 +70,7 @@ def drop_tables(
     trans.commit()
 
 
-def drop_all_custom_types(engine: sqlalchemy.Engine, schema: str) -> None:
+def drop_custom_types(engine: sqlalchemy.Engine, schema: str, type_names: list[str]) -> None:
     """
     Drop every user-defined type in the given schema.
     Works for enums, composite types, domains, etc.
@@ -81,12 +81,15 @@ def drop_all_custom_types(engine: sqlalchemy.Engine, schema: str) -> None:
         FROM pg_type t
         JOIN pg_namespace n  ON n.oid = t.typnamespace
         WHERE n.nspname = :schema
-          AND t.typtype IN ('e', 'd')     -- e = enum, d = domain. WE IGNORE c = composite types!
+          AND t.typtype IN ('e', 'd', 'c')    -- e = enum, d = domain, c = composite type
+          AND t.typname IN :type_names
         """
-    )
+    ).bindparams(sqlalchemy.bindparam("type_names", expanding=True))
 
     with engine.begin() as conn:  # autocommit block
-        type_names = conn.execute(query, {"schema": schema}).scalars().all()
+        types_to_drop = (
+            conn.execute(query, {"schema": schema, "type_names": type_names}).scalars().all()
+        )
 
-        for fullname in type_names:
+        for fullname in types_to_drop:
             conn.execute(sqlalchemy.text(f"DROP TYPE IF EXISTS {fullname} CASCADE;"))
