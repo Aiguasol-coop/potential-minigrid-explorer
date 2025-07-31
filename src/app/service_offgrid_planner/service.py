@@ -1,6 +1,7 @@
 import collections.abc as abc
 import enum
 import json.decoder
+import time
 import typing
 
 import httpx
@@ -60,11 +61,29 @@ def _send_input_to_optimizer(
     else:
         server_info = "supply"
 
+    def retry_request(
+        method: abc.Callable[..., httpx.Response], url: str, **kwargs: typing.Any
+    ) -> httpx.Response | None:
+        max_attempts = 5
+        for attempt in range(max_attempts):
+            try:
+                response: httpx.Response = method(url, **kwargs)
+                return response
+            except (httpx.TimeoutException, json.decoder.JSONDecodeError):
+                if attempt == max_attempts - 1:
+                    raise
+                time.sleep(1.3)  # Retry delay
+        return None
+
     try:
-        response_send = httpx.post(
+        response_send = retry_request(
+            httpx.post,
             url=f"{settings.service_offgrid_planner_url}/sendjson/{server_info}",
             content=input.model_dump_json(),
         )
+
+        assert response_send
+
         if response_send.status_code != 200:
             return ErrorServiceOffgridPlanner.request_failed
         if isinstance(input, grid.GridInput):
@@ -76,9 +95,13 @@ def _send_input_to_optimizer(
 
     def checker():
         try:
-            response_check = httpx.get(
+            response_check = retry_request(
+                httpx.get,
                 url=f"{settings.service_offgrid_planner_url}/check/{result_send.id}",
             )
+
+            assert response_check
+
             if response_check.status_code != 200:
                 return ErrorServiceOffgridPlanner.request_failed
             if isinstance(input, grid.GridInput):
