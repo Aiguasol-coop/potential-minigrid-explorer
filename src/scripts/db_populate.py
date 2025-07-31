@@ -1,4 +1,5 @@
 import os
+
 import geopandas as gpd
 import pandas as pd
 import sqlmodel
@@ -171,54 +172,62 @@ def populate_db(db_session: sqlmodel.Session) -> None:
     """It only populates previously empty tables."""
 
     raw = os.path.join(os.getcwd(), "app", "src", "scripts", "raw_data")
-    shp_files = {f[:-4]: f for f in os.listdir(raw) if f.endswith(".shp")}
+    try:
+        shp_files = {f[:-4]: f for f in os.listdir(raw) if f.endswith(".shp")}
+    except FileNotFoundError as exp:
+        print(f"FileNotFoundError captured: directory {exp.filename}")
+        shp_files = {}
+
     files_by_model = {}
     for basename, model in CLASS_DICT.items():
         if basename in shp_files:
             files_by_model.setdefault(model, []).append(shp_files[basename])  # type: ignore
 
     for model, files in files_by_model.items():  # type: ignore
-        if model.__tablename__ == "buildings":  # type: ignore
-            if db_session.exec(sqlmodel.select(model).limit(1)).first():  # type: ignore
-                print("🏠 Buildings table already populated, skipping.")
+        try:
+            if model.__tablename__ == "buildings":  # type: ignore
+                if db_session.exec(sqlmodel.select(model).limit(1)).first():  # type: ignore
+                    print("🏠 Buildings table already populated, skipping.")
+                    continue
+
+                if set(files) >= {"centroids_buildings_20km.shp", "polygons_buildings_20km.shp"}:  # type: ignore
+                    cent = clean_building_centroids(
+                        gpd.read_file(os.path.join(raw, "centroids_buildings_20km.shp"))  # type: ignore
+                    )
+                    poly = clean_building_polygons(
+                        gpd.read_file(os.path.join(raw, "polygons_buildings_20km.shp"))  # type: ignore
+                    )
+
+                    merged = pd.merge(  # type: ignore
+                        cent, poly, on="id_shp", how="outer", suffixes=("", "_poly")
+                    ).replace({np.nan: None})
+
+                    objs = [model(**rec) for rec in merged.to_dict("records")]  # type: ignore
+                    db_session.bulk_save_objects(objs)  # type: ignore
+                    db_session.commit()
+                    print(f"✔️ Inserted {len(objs)} buildings.")  # type: ignore
+                else:
+                    print("⚠️ Missing one or both building shapefiles, skipping.")
                 continue
 
-            if set(files) >= {"centroids_buildings_20km.shp", "polygons_buildings_20km.shp"}:  # type: ignore
-                cent = clean_building_centroids(
-                    gpd.read_file(os.path.join(raw, "centroids_buildings_20km.shp"))  # type: ignore
-                )
-                poly = clean_building_polygons(
-                    gpd.read_file(os.path.join(raw, "polygons_buildings_20km.shp"))  # type: ignore
-                )
+            if db_session.exec(sqlmodel.select(model).limit(1)).first():  # type: ignore
+                print(f"⏭️ Skipping `{model.__tablename__}`: already populated.")  # type: ignore
+                continue
 
-                merged = pd.merge(  # type: ignore
-                    cent, poly, on="id_shp", how="outer", suffixes=("", "_poly")
-                ).replace({np.nan: None})
+            basename = os.path.splitext(files[0])[0]  # type: ignore
+            gdf = gpd.read_file(os.path.join(raw, files[0]))  # type: ignore
 
-                objs = [model(**rec) for rec in merged.to_dict("records")]  # type: ignore
-                db_session.bulk_save_objects(objs)  # type: ignore
-                db_session.commit()
-                print(f"✔️ Inserted {len(objs)} buildings.")  # type: ignore
+            if basename == "electric_grid":
+                clean = clean_grid_lines(gdf)
+            elif basename == "mini-grids (points)":
+                clean = clean_mini_grids(gdf)
             else:
-                print("⚠️ Missing one or both building shapefiles, skipping.")
-            continue
+                clean = gdf
 
-        if db_session.exec(sqlmodel.select(model).limit(1)).first():  # type: ignore
-            print(f"⏭️ Skipping `{model.__tablename__}`: already populated.")  # type: ignore
-            continue
-
-        basename = os.path.splitext(files[0])[0]  # type: ignore
-        gdf = gpd.read_file(os.path.join(raw, files[0]))  # type: ignore
-
-        if basename == "electric_grid":
-            clean = clean_grid_lines(gdf)
-        elif basename == "mini-grids (points)":
-            clean = clean_mini_grids(gdf)
-        else:
-            clean = gdf
-
-        df = clean.replace({np.nan: None})  # type: ignore
-        objs = [model(**rec) for rec in df.to_dict("records")]  # type: ignore
-        db_session.bulk_save_objects(objs)  # type: ignore
-        db_session.commit()
-        print(f"✔️ Inserted `{model.__tablename__}`: {len(objs)} records.")  # type: ignore
+            df = clean.replace({np.nan: None})  # type: ignore
+            objs = [model(**rec) for rec in df.to_dict("records")]  # type: ignore
+            db_session.bulk_save_objects(objs)  # type: ignore
+            db_session.commit()
+            print(f"✔️ Inserted `{model.__tablename__}`: {len(objs)} records.")  # type: ignore
+        except FileNotFoundError as exp:
+            print(f"FileNotFoundError captured: file {exp.filename}")

@@ -262,7 +262,7 @@ class WorkerFindClusters:
             ### BEGIN of FAKE code
 
             FAKE_CLUSTERS_COUNT = 50
-            FAKE_MINIGRIDS_COUNT = 5
+            FAKE_MINIGRIDS_COUNT = 20
 
             for i in range(FAKE_MINIGRIDS_COUNT):
                 if self._stop_event.is_set():
@@ -373,7 +373,7 @@ class WorkerRunOptimizer:
 
             assert db_exploration
 
-            NUM_SLOTS: int = 3
+            NUM_SLOTS: int = 8
             slots: list[
                 tuple[
                     pydantic.UUID4 | None,
@@ -403,7 +403,7 @@ class WorkerRunOptimizer:
                     return self._result
 
                 # Wait some time to not choke the optimizer
-                time.sleep(2)
+                time.sleep(0.2)
 
                 grid_input = grid.GridInput.model_validate(json.loads(db_simulation.grid_input))
                 supply_input = supply.SupplyInput.model_validate(
@@ -460,7 +460,7 @@ class WorkerRunOptimizer:
                             )
 
                             # Wait some time to not choke the optimizer
-                            time.sleep(2)
+                            time.sleep(0.2)
 
                             checker_grid = offgrid_planner.optimize_grid(grid_input)
                             checker_supply = offgrid_planner.optimize_supply(supply_input)
