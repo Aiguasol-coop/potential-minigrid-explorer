@@ -69,7 +69,8 @@ def _send_input_to_optimizer(
             try:
                 response: httpx.Response = method(url, **kwargs)
                 return response
-            except (httpx.TimeoutException, json.decoder.JSONDecodeError):
+            except (httpx.TimeoutException, json.decoder.JSONDecodeError) as exp:
+                print(f"SEND_TO_OPTIMIZER: Request to optimizer failed: {exp}")
                 if attempt == max_attempts - 1:
                     raise
                 time.sleep(1.3)  # Retry delay
@@ -85,12 +86,17 @@ def _send_input_to_optimizer(
         assert response_send
 
         if response_send.status_code != 200:
+            print(
+                f"SEND_TO_OPTIMIZER: Response from optimizer is not 200, status code: "
+                f"{response_send.status_code}"
+            )
             return ErrorServiceOffgridPlanner.request_failed
         if isinstance(input, grid.GridInput):
             result_send = OptimizerOutput[grid.GridResult].model_validate(response_send.json())
         else:
             result_send = OptimizerOutput[supply.SupplyResult].model_validate(response_send.json())
-    except (httpx.TimeoutException, json.decoder.JSONDecodeError):
+    except json.decoder.JSONDecodeError as exp:
+        print(f"SEND_TO_OPTIMIZER: Error decoding response from optimizer: {exp}")
         return ErrorServiceOffgridPlanner.service_unavailable
 
     def checker():
@@ -103,14 +109,20 @@ def _send_input_to_optimizer(
             assert response_check
 
             if response_check.status_code != 200:
+                print(
+                    f"SEND_TO_OPTIMIZER: Response from optimizer is not 200, status code: "
+                    f"{response_send.status_code}"
+                )
                 return ErrorServiceOffgridPlanner.request_failed
             if isinstance(input, grid.GridInput):
                 output = OptimizerOutput[grid.GridResult].model_validate(response_check.json())
             else:
                 output = OptimizerOutput[supply.SupplyResult].model_validate(response_check.json())
-        except (httpx.TimeoutException, json.decoder.JSONDecodeError):
+        except json.decoder.JSONDecodeError as exp:
+            print(f"SEND_TO_OPTIMIZER: Error decoding response from optimizer: {exp}")
             return ErrorServiceOffgridPlanner.service_unavailable
         if output.status == RequestStatus.ERROR:
+            print("SEND_TO_OPTIMIZER: Request to optimizer failed")
             return ErrorServiceOffgridPlanner.request_failed
 
         return output
