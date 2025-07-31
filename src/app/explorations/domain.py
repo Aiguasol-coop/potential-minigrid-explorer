@@ -608,6 +608,9 @@ class WorkerProcessSimulationResults:
                         Simulation.status == SimulationStatus.OPTIMIZED,
                     )
                 ).all()
+                if self._stop_event.is_set():
+                    self._result = None
+                    return self._result
 
                 for simulation in db_simulations:
                     if self._stop_event.is_set():
