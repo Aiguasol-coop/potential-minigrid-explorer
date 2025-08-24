@@ -6,7 +6,7 @@ import pandas as pd
 import sqlmodel
 import numpy as np
 import shapely
-import fiona # type: ignore
+import fiona  # type: ignore
 import json
 import typing
 
@@ -25,9 +25,35 @@ CLASS_DICT = {
 
 ##################################### GEOJSON DEFAULT FILES DATA #####################################
 
+
 def clean_roads(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    gdf_clean = gdf.loc[:, ['osm_id', 'code', 'fclass', 'ref', 'oneway', 'maxspeed', 'layer', 'bridge', 'tunnel', 'geometry']]
-    gdf_clean.columns = ["id_shp", "code", "road_type", "ref", "oneway", "maxspeed", "layer", "bridge", "tunnel", "pg_geography"]
+    gdf_clean = gdf.loc[
+        :,
+        [
+            "osm_id",
+            "code",
+            "fclass",
+            "ref",
+            "oneway",
+            "maxspeed",
+            "layer",
+            "bridge",
+            "tunnel",
+            "geometry",
+        ],
+    ]
+    gdf_clean.columns = [
+        "id_shp",
+        "code",
+        "road_type",
+        "ref",
+        "oneway",
+        "maxspeed",
+        "layer",
+        "bridge",
+        "tunnel",
+        "pg_geography",
+    ]
     gdf_clean["length_km"] = gdf_clean["pg_geography"].apply(  # type: ignore
         lambda g: g.length / 1000 if g else None  # type: ignore
     )
@@ -127,12 +153,12 @@ def read_gdf_in_chunks(
     poly_path: str | None = None,
     poly_cols: list[str] | None = None,
     chunk_size: int = 200_000,
-    include_geometry: bool = True) -> Iterator[gpd.GeoDataFrame]:
-
+    include_geometry: bool = True,
+) -> Iterator[gpd.GeoDataFrame]:
     # 1) Inspect cheaply without loading all features
-    with fiona.open(cent_path) as src: # type: ignore
+    with fiona.open(cent_path) as src:  # type: ignore
         total = len(src)
-        crs = src.crs_wkt or src.crs # type: ignore
+        crs = src.crs_wkt or src.crs  # type: ignore
 
     # 2) Stream chunks
     for start in range(0, total, chunk_size):
@@ -149,29 +175,29 @@ def read_gdf_in_chunks(
 
         # Keep only requested columns (and geometry if present)
         if cent_cols is not None:
-            keep = [c for c in cent_cols if c in cent_gdf.columns] # type: ignore
-            if include_geometry and "geometry" in cent_gdf.columns: # type: ignore
+            keep = [c for c in cent_cols if c in cent_gdf.columns]  # type: ignore
+            if include_geometry and "geometry" in cent_gdf.columns:  # type: ignore
                 keep = keep
-            cent_gdf = cent_gdf[keep] # type: ignore
+            cent_gdf = cent_gdf[keep]  # type: ignore
 
         poly_gdf = gpd.read_file(  # type: ignore
-            poly_path, # type: ignore
+            poly_path,  # type: ignore
             rows=slice(start, stop),
             ignore_geometry=not include_geometry,  # type: ignore
         )
 
         # Set CRS if missing (only meaningful when geometry is present)
-        if include_geometry and (crs is not None) and (getattr(poly_gdf, "crs", None) is None): # type: ignore
+        if include_geometry and (crs is not None) and (getattr(poly_gdf, "crs", None) is None):  # type: ignore
             poly_gdf = poly_gdf.set_crs(crs, allow_override=True)  # type: ignore[attr-defined]
 
         # Keep only requested columns (and geometry if present)
         if cent_cols is not None:
-            keep = [c for c in poly_cols if c in poly_gdf.columns] # type: ignore
-            if include_geometry and "geometry" in poly_gdf.columns: # type: ignore
+            keep = [c for c in poly_cols if c in poly_gdf.columns]  # type: ignore
+            if include_geometry and "geometry" in poly_gdf.columns:  # type: ignore
                 keep = keep
-            poly_gdf = poly_gdf[keep] # type: ignore
+            poly_gdf = poly_gdf[keep]  # type: ignore
 
-        yield cent_gdf, poly_gdf # type: ignore
+        yield cent_gdf, poly_gdf  # type: ignore
 
 
 def clean_building_centroids(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -264,37 +290,48 @@ def populate_db(db_session: sqlmodel.Session) -> None:
                     continue
 
                 if set(files) >= {"centroids_buildings_20km.shp", "polygons_buildings_20km.shp"}:  # type: ignore
-
                     cent_cols = [
-                        "building_i","Province","electric_d","has_electr","category",
-                        "building_t","dist_grid","dist_road","Island","area_m2","geometry"
+                        "building_i",
+                        "Province",
+                        "electric_d",
+                        "has_electr",
+                        "category",
+                        "building_t",
+                        "dist_grid",
+                        "dist_road",
+                        "Island",
+                        "area_m2",
+                        "geometry",
                     ]
                     poly_cols = ["building_i", "geometry"]
                     total_inserted = 0
                     centroids_path = os.path.join(raw, "centroids_buildings_20km.shp")  # type: ignore
                     polygons_path = os.path.join(raw, "polygons_buildings_20km.shp")
 
-                    for cent_gdf_chunk, poly_gdf_chunk in read_gdf_in_chunks(cent_path=centroids_path,
-                                                        cent_cols=cent_cols,
-                                                        poly_path=polygons_path,
-                                                        poly_cols=poly_cols,
-                                                        chunk_size=200_000,
-                                                        include_geometry=True):
-
-                        cent = clean_building_centroids(cent_gdf_chunk) # type: ignore
-                        poly = clean_building_polygons(poly_gdf_chunk) # type: ignore
+                    for cent_gdf_chunk, poly_gdf_chunk in read_gdf_in_chunks(
+                        cent_path=centroids_path,
+                        cent_cols=cent_cols,
+                        poly_path=polygons_path,
+                        poly_cols=poly_cols,
+                        chunk_size=200_000,
+                        include_geometry=True,
+                    ):
+                        cent = clean_building_centroids(cent_gdf_chunk)  # type: ignore
+                        poly = clean_building_polygons(poly_gdf_chunk)  # type: ignore
 
                         merged = pd.merge(  # type: ignore
                             cent, poly, on="id_shp", how="outer", suffixes=("", "_poly")
                         ).replace({np.nan: None})
 
-                        records = merged.to_dict(orient="records") # type: ignore
+                        records = merged.to_dict(orient="records")  # type: ignore
 
                         # Fast path: bulk_insert_mappings (no ORM object construction)
                         db_session.bulk_insert_mappings(model, records)  # type: ignore
                         db_session.commit()
                         total_inserted += len(records)
-                        print(f"✔️ Inserted {len(records)} buildings, total DB buildings {total_inserted}")
+                        print(
+                            f"✔️ Inserted {len(records)} buildings, total DB buildings {total_inserted}"
+                        )
 
                 else:
                     print("⚠️ Missing one or both building shapefiles, skipping.")
@@ -327,12 +364,14 @@ def populate_db(db_session: sqlmodel.Session) -> None:
 
 ##################################### JSON DEFAULT DATA #####################################
 
-def load_json_data(file_path : str) -> dict[str, typing.Any]:
+
+def load_json_data(file_path: str) -> dict[str, typing.Any]:
     """Load data from JSON file."""
-    with open(file_path, 'r') as f:
+    with open(file_path, "r") as f:
         return json.load(f)
 
-def populate_category_distribution(session : sqlmodel.Session, data : dict[str, typing.Any]):
+
+def populate_category_distribution(session: sqlmodel.Session, data: dict[str, typing.Any]):
     """Populate the Category Distribution table."""
     print("Populating Category Distribution...")
 
@@ -344,11 +383,12 @@ def populate_category_distribution(session : sqlmodel.Session, data : dict[str, 
     category_dist = explorations.CategoryDistribution(
         households=data["centroid_category_distribution"]["households"],
         public_services=data["centroid_category_distribution"]["public_services"],
-        enterprises=data["centroid_category_distribution"]["enterprises"]
+        enterprises=data["centroid_category_distribution"]["enterprises"],
     )
     session.add(category_dist)
     session.commit()
     print("  Added category distribution data.")
+
 
 def populate_household_data(session: sqlmodel.Session, data: dict[str, typing.Any]):
     """Populate the HouseholdData table."""
@@ -365,13 +405,14 @@ def populate_household_data(session: sqlmodel.Session, data: dict[str, typing.An
                 area_type=area_type,
                 subcategory=subcategory,
                 kwh_per_day=values["kwh_per_day"],
-                distribution=values["distribution"]
+                distribution=values["distribution"],
             )
             session.add(household_data)
     session.commit()
     print(f"  Added household data for {area_type}.")
 
-def populate_enterprise_data(session : sqlmodel.Session, data : dict[str, typing.Any]):
+
+def populate_enterprise_data(session: sqlmodel.Session, data: dict[str, typing.Any]):
     """Populate the EnterpriseData table."""
     print("Populating EnterpriseData...")
 
@@ -386,13 +427,14 @@ def populate_enterprise_data(session : sqlmodel.Session, data : dict[str, typing
                 area_type=area_type,
                 subcategory=subcategory,
                 kwh_per_day=values["kwh_per_day"],
-                distribution=values["distribution"]
+                distribution=values["distribution"],
             )
             session.add(enterprise_data)
     session.commit()
     print(f"  Added enterprise data for {area_type}.")
 
-def populate_public_service_data(session : sqlmodel.Session, data : dict[str, typing.Any]):
+
+def populate_public_service_data(session: sqlmodel.Session, data: dict[str, typing.Any]):
     """Populate the PublicServiceData table."""
     print("Populating PublicServiceData...")
 
@@ -407,13 +449,14 @@ def populate_public_service_data(session : sqlmodel.Session, data : dict[str, ty
                 area_type=area_type,
                 subcategory=subcategory,
                 kwh_per_day=values["kwh_per_day"],
-                distribution=values["distribution"]
+                distribution=values["distribution"],
             )
             session.add(public_service_data)
     session.commit()
     print(f"  Added public service data for {area_type}.")
 
-def populate_household_hourly_profile(session : sqlmodel.Session, data : dict[str, typing.Any]):
+
+def populate_household_hourly_profile(session: sqlmodel.Session, data: dict[str, typing.Any]):
     """Populate the HouseholdHourlyProfile table."""
     print("Populating HouseholdHourlyProfile...")
 
@@ -431,13 +474,14 @@ def populate_household_hourly_profile(session : sqlmodel.Session, data : dict[st
             household_profile = explorations.HouseholdHourlyProfile(
                 area_type=area_type,
                 subcategory=subcategory,
-                hourly_profile=values["hourly_profile"]
+                hourly_profile=values["hourly_profile"],
             )
             session.add(household_profile)
     session.commit()
     print("  Added household hourly profiles.")
 
-def populate_enterprise_hourly_profile(session : sqlmodel.Session, data : dict[str, typing.Any]):
+
+def populate_enterprise_hourly_profile(session: sqlmodel.Session, data: dict[str, typing.Any]):
     """Populate the EnterpriseHourlyProfile table."""
     print("Populating EnterpriseHourlyProfile...")
 
@@ -448,14 +492,14 @@ def populate_enterprise_hourly_profile(session : sqlmodel.Session, data : dict[s
 
     for subcategory, values in data["enterprise_hourly_profiles"].items():
         enterprise_profile = explorations.EnterpriseHourlyProfile(
-            subcategory=subcategory,
-            hourly_profile=values["hourly_profile"]
+            subcategory=subcategory, hourly_profile=values["hourly_profile"]
         )
         session.add(enterprise_profile)
     session.commit()
     print("  Added enterprise hourly profiles.")
 
-def populate_public_service_hourly_profile(session : sqlmodel.Session, data : dict[str, typing.Any]):
+
+def populate_public_service_hourly_profile(session: sqlmodel.Session, data: dict[str, typing.Any]):
     """Populate the PublicServiceHourlyProfile table."""
     print("Populating PublicServiceHourlyProfile...")
 
@@ -466,21 +510,24 @@ def populate_public_service_hourly_profile(session : sqlmodel.Session, data : di
 
     for subcategory, values in data["public_service_hourly_profile"].items():
         public_service_profile = explorations.PublicServiceHourlyProfile(
-            subcategory=subcategory,
-            hourly_profile=values["hourly_profile"]
+            subcategory=subcategory, hourly_profile=values["hourly_profile"]
         )
         session.add(public_service_profile)
     session.commit()
     print("  Added public service hourly profiles.")
 
-def populate_default_db(db_session: sqlmodel.Session) -> None:
 
+def populate_default_db(db_session: sqlmodel.Session) -> None:
     # Path to the JSON file
-    json_file = os.path.join(os.path.join(os.getcwd(), "src", "scripts", "default_data", "db_data.json"))
+    json_file = os.path.join(
+        os.path.join(os.getcwd(), "src", "scripts", "default_data", "db_data.json")
+    )
 
     # Check if the file exists
     if not os.path.exists(json_file):
-        raise FileNotFoundError(f"Error: Default data not loaded.. JSON file not found at {json_file}")
+        raise FileNotFoundError(
+            f"Error: Default data not loaded.. JSON file not found at {json_file}"
+        )
 
     # Load the data
     print(f"Loading data from {json_file}...")

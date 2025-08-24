@@ -8,6 +8,7 @@ import uuid6
 
 import app.shared.geography as geography
 
+
 class RoadBase(sqlmodel.SQLModel):
     code: str | None = None
     road_type: str | None = None

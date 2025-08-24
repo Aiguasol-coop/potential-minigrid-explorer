@@ -146,8 +146,9 @@ def get_grid_network(db: db.Session) -> list[GridDistributionLineResponse]:
 
 
 @router.post("/roads")
-def get_country_roads(db: db.Session, bbox : tuple[float, float, float, float] | None = None) -> list[RoadsResponse]:
-
+def get_country_roads(
+    db: db.Session, bbox: tuple[float, float, float, float] | None = None
+) -> list[RoadsResponse]:
     query = sqlmodel.select(grid.Road)
 
     if bbox:
@@ -155,7 +156,7 @@ def get_country_roads(db: db.Session, bbox : tuple[float, float, float, float] |
         envelope = sqlalchemy.func.ST_MakeEnvelope(min_lon, min_lat, max_lon, max_lat, 4326)
         query = query.where(sqlalchemy.func.ST_Intersects(grid.Road.pg_geography, envelope))
     else:
-        query = query.where(grid.Road.road_type.in_(["motorway", "trunk", "primary", "secondary"])) # type: ignore
+        query = query.where(grid.Road.road_type.in_(["motorway", "trunk", "primary", "secondary"]))  # type: ignore
 
     roads = db.exec(query).all()
     if not roads:
