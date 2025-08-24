@@ -11,7 +11,7 @@ import app.explorations.domain  # type: ignore
 import app.grid.domain  # type: ignore
 
 
-from scripts.db_populate import populate_db
+from scripts.db_populate import populate_db, populate_default_db
 
 
 def get_engine() -> sqlalchemy.Engine:
@@ -43,6 +43,14 @@ ALL_TABLES: dict[str, tuple[bool, list[str]]] = {
     "cluster": (False, []),
     "exploration": (False, ["explorationstatus"]),
     "simulation": (False, []),
+    "roads": (True, []),
+    "category_distribution": (True, []),
+    "household_data": (True, []),
+    "enterprise_data": (True, []),
+    "public_service_data": (True, []),
+    "household_hourly_profile": (True, []),
+    "enterprise_hourly_profile": (True, []),
+    "public_service_hourly_profile": (True, []),
 }
 
 
@@ -59,9 +67,11 @@ def main(selected_tables: dict[str, tuple[bool, list[str]]]) -> None:
     # Populate if there is some table that needs initial data
     if any([b for _, (b, _) in selected_tables.items()]):
         with sqlmodel.Session(bind=engine) as session:
-            # TODO: Add roads to DB
             # Load data from shp files:
             populate_db(db_session=session)
+
+            # Load default data from JSON file:
+            populate_default_db(db_session=session)
 
 
 if __name__ == "__main__":
@@ -75,7 +85,7 @@ if __name__ == "__main__":
         help="List of table names to re-create and populate (e.g., buildings or simulation), "
         "or 'all' for all tables.",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(["--tables", "mini_grids"])
 
     # Handle the special "all" keyword
     if len(args.tables) == 1 and args.tables[0].lower() == "all":

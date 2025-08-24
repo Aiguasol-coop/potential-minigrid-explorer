@@ -87,9 +87,10 @@ def drop_custom_types(engine: sqlalchemy.Engine, schema: str, type_names: list[s
     ).bindparams(sqlalchemy.bindparam("type_names", expanding=True))
 
     with engine.begin() as conn:  # autocommit block
-        types_to_drop = (
-            conn.execute(query, {"schema": schema, "type_names": type_names}).scalars().all()
-        )
+        if type_names:
+            types_to_drop = (
+                conn.execute(query, {"schema": schema, "type_names": type_names}).scalars().all()
+            )
 
-        for fullname in types_to_drop:
-            conn.execute(sqlalchemy.text(f"DROP TYPE IF EXISTS {fullname} CASCADE;"))
+            for fullname in types_to_drop:
+                conn.execute(sqlalchemy.text(f"DROP TYPE IF EXISTS {fullname} CASCADE;"))
