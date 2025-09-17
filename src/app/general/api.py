@@ -12,6 +12,7 @@ import app._version
 import app.db.core as db
 import app.service_offgrid_planner.demand as demand
 import app.grid.domain as grid
+import app.shared.bounding_box as bounding_box
 from app.explorations.domain import (
     PublicServiceData,
     HouseholdData,
@@ -110,11 +111,11 @@ def household_profiles(db: db.Session, area_type: AreaType) -> list[HouseHoldPro
     return [HouseHoldProfileResponse.model_validate(profile) for profile in profiles]
 
 
-@router.post("/buildings")
+@router.get("/buildings")
 def get_buildings_by_bbox(
-    db: db.Session, bbox: tuple[float, float, float, float]
+    db: db.Session, bbox: bounding_box.BoundingBox = fastapi.Query()
 ) -> list[BuildingResponse]:
-    min_lon, min_lat, max_lon, max_lat = bbox
+    min_lon, min_lat, max_lon, max_lat = bbox.parts
     envelope = geofunc.ST_MakeEnvelope(min_lon, min_lat, max_lon, max_lat, 4326)
     centroid_geom: ColumnElement[Any] = sqlalchemy.cast(
         grid.Building.pg_geography_centroid, Geometry(geometry_type="POINT", srid=4326)

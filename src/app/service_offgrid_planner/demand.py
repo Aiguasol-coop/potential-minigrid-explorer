@@ -42,9 +42,20 @@ class ExistingPublicBuilding(pydantic.BaseModel):
 
 
 CLASS_CONVERSION = {
-    "Health_Clinic": "hospital_first",  # 30-60 beds	Low/moderate energy requirements.Lighting during evening hours and maintaining the cold chain for vaccines, blood, and other medical supplies
-    "Health_CHPS": "hospital_primary",  # No beds other than for emergencies/ maternity care	Low energy requirements. Typically located in a remote setting with limited services and a small staff. Typically operates weekdays
-    "Health_Health Centre": "hospital_secondary",  # 	60-120 beds  Moderate energy requirements. May accommodate sophisticated diagnostic medical equipment
+    # 30-60 beds
+    #
+    # Low/moderate energy requirements. Lighting during evening hours and maintaining the cold chain
+    # for vaccines, blood, and other medical supplies
+    "Health_Clinic": "hospital_first",
+    # No beds other than for emergencies/ maternity care
+    #
+    # Low energy requirements. Typically located in a remote setting with limited services and a
+    # small staff. Typically operates weekdays
+    "Health_CHPS": "hospital_primary",
+    # 60-120 beds
+    #
+    #  Moderate energy requirements. May accommodate sophisticated diagnostic medical equipment
+    "Health_Health Centre": "hospital_secondary",
     "Education_Primary School": "school_primary",
     "Education_Secondary School": "school_secondary",
 }
@@ -201,8 +212,8 @@ def build_annual_demand(
     public_services_df = convert_hourly_demand_to_df(public_service_hourly)
 
     daily_hourly_demand = (
-        households_df.add(enterprises_df, fill_value=0)
-        .add(public_services_df, fill_value=0)
+        households_df.add(enterprises_df, fill_value=0)  # pyright: ignore[reportUnknownMemberType]
+        .add(public_services_df, fill_value=0)  # pyright: ignore[reportUnknownMemberType]
         .sum(axis=1)  # type: ignore
     )
 

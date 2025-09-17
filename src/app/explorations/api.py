@@ -11,6 +11,7 @@ import shapely
 
 import app.db.core as db
 import app.grid.domain as grid
+import app.shared.bounding_box as bounding_box
 import app.shared.geography as geography
 import app.utils as utils
 import app.explorations.domain as explorations
@@ -128,7 +129,8 @@ class ResponseOk(pydantic.BaseModel):
 ###   FASTAPI PATH OPERATIONS   ####################################################################
 ####################################################################################################
 
-# TODO: Import full centroids layer + recalculate road distance with new shp file.. + review existing minigrids layer.
+# TODO: Import full centroids layer + recalculate road distance with new shp file.. + review
+# existing minigrids layer.
 # TODO: Review and document known errors.
 router = fastapi.APIRouter()
 
@@ -145,18 +147,28 @@ def get_grid_network(db: db.Session) -> list[GridDistributionLineResponse]:
     return [GridDistributionLineResponse.model_validate(line) for line in grid_network]
 
 
-@router.post("/roads")
+@router.get("/roads")
 def get_country_roads(
-    db: db.Session, bbox: tuple[float, float, float, float] | None = None
+    db: db.Session,
+    bbox: str | None = fastapi.Query(default=None),
 ) -> list[RoadsResponse]:
     query = sqlmodel.select(grid.Road)
 
     if bbox:
-        min_lon, min_lat, max_lon, max_lat = bbox
+        min_lon, min_lat, max_lon, max_lat = bounding_box.BoundingBox(bbox=bbox).parts
         envelope = sqlalchemy.func.ST_MakeEnvelope(min_lon, min_lat, max_lon, max_lat, 4326)
         query = query.where(sqlalchemy.func.ST_Intersects(grid.Road.pg_geography, envelope))
     else:
-        query = query.where(grid.Road.road_type.in_(["motorway", "trunk", "primary", "secondary"]))  # type: ignore
+        query = query.where(
+            grid.Road.road_type.in_(  # type: ignore
+                [
+                    "motorway",
+                    "trunk",
+                    # "primary",
+                    # "secondary",
+                ]
+            )
+        )
 
     roads = db.exec(query).all()
     if not roads:
