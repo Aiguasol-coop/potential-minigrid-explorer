@@ -9,6 +9,7 @@ requires-python = ">=3.13"
 dependencies = [
     "faker>=37.1.0",
     "fastapi[standard]>=0.115.11",
+    "fiona>=1.10.1",
     "geoalchemy2>=0.17.1",
     "geojson>=3.2.0",
     "geojson-pydantic>=2.0.0",
