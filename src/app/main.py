@@ -18,6 +18,7 @@ import fastapi.middleware.cors
 import app._version
 import app.general.api as general
 import app.explorations.api as explorations
+import app.features.api as features
 
 
 api = fastapi.FastAPI(lifespan=lambda app: startup_and_shutdown(app))
@@ -28,13 +29,14 @@ This can be run using either the ``fastapi`` executable or the ``uvicorn`` execu
 
 
 class Tags(Enum):
-    general = "general"
-    explorations = "explorations"
-    projects = "projects"
+    explorations = "Potential minigrid search"
+    features = "Country features"
+    general = "General"
 
 
 api.include_router(general.router, prefix="", tags=[Tags.general])
 api.include_router(explorations.router, prefix="/explorations", tags=[Tags.explorations])
+api.include_router(features.router, prefix="/features", tags=[Tags.features])
 
 
 ####################################################################################################

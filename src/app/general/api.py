@@ -1,18 +1,10 @@
+import enum
+
 import fastapi
 import sqlmodel
-import geojson_pydantic as geopydantic
-from geoalchemy2 import functions as geofunc
-import sqlalchemy
-from sqlalchemy.sql.elements import ColumnElement
-from typing import Any
-from geoalchemy2 import Geometry
-import enum
 
 import app._version
 import app.db.core as db
-import app.service_offgrid_planner.demand as demand
-import app.grid.domain as grid
-import app.shared.bounding_box as bounding_box
 from app.explorations.domain import (
     PublicServiceData,
     HouseholdData,
@@ -25,11 +17,6 @@ router = fastapi.APIRouter()
 ####################################################################################################
 ###   MODELS AND DB ENTITIES   #####################################################################
 ####################################################################################################
-
-
-class BuildingResponse(sqlmodel.SQLModel):
-    building_type: str | None = None
-    centroid_geography: geopydantic.Point
 
 
 class HouseHoldDataResponse(sqlmodel.SQLModel):
@@ -109,32 +96,3 @@ def household_profiles(db: db.Session, area_type: AreaType) -> list[HouseHoldPro
     )
 
     return [HouseHoldProfileResponse.model_validate(profile) for profile in profiles]
-
-
-@router.get("/buildings")
-def get_buildings_by_bbox(
-    db: db.Session, bbox: bounding_box.BoundingBox = fastapi.Query()
-) -> list[BuildingResponse]:
-    min_lon, min_lat, max_lon, max_lat = bbox.parts
-    envelope = geofunc.ST_MakeEnvelope(min_lon, min_lat, max_lon, max_lat, 4326)
-    centroid_geom: ColumnElement[Any] = sqlalchemy.cast(
-        grid.Building.pg_geography_centroid, Geometry(geometry_type="POINT", srid=4326)
-    )
-
-    cluster_centroids: list[grid.Building] = list(
-        db.exec(
-            sqlmodel.select(grid.Building).where(geofunc.ST_Within(centroid_geom, envelope))
-        ).all()
-    )
-    buildings: list[BuildingResponse] = []
-    for building in cluster_centroids:
-        building.building_type = (
-            demand.get_keys_from_value(
-                demand.CLASS_CONVERSION, f"{building.building_type}_{building.category.lower()}"
-            )
-            if building.building_type != "other" and building.category
-            else "household"
-        )
-        buildings.append(BuildingResponse.model_validate(building))
-
-    return buildings
