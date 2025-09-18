@@ -1,3 +1,10 @@
+# pyright: reportAttributeAccessIssue=false
+# pyright: reportUnknownMemberType=false
+# pyright: reportArgumentType=false
+# pyright: reportUnknownArgumentType=false
+# pyright: reportOperatorIssue=false
+
+
 import uuid
 import pydantic
 import typing
@@ -417,7 +424,7 @@ class Project:
 
         # Key performance indicators
         self.res = (
-            100 * self.sequences_pv.sum() / (self.sequences_genset.sum() + self.sequences_pv.sum())
+            100 * self.sequences_pv.sum() / (self.sequences_genset.sum() + self.sequences_pv.sum())  # pyright: ignore[reportUnknownMemberType]
         )
         self.surplus_rate = (
             100

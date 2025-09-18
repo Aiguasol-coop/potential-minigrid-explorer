@@ -1,6 +1,4 @@
 import sqlmodel
-from app.db.core import get_engine
-from app.grid.domain import Building
 import sqlalchemy
 from geoalchemy2 import Geometry
 from geoalchemy2 import functions as geofunc
@@ -9,15 +7,11 @@ from sqlalchemy.sql.elements import ColumnElement
 import pydantic
 import pandas as pd
 import datetime
-from app.explorations.domain import (
-    CategoryDistribution,
-    PublicServiceData,
-    HouseholdData,
-    EnterpriseData,
-    HouseholdHourlyProfile,
-    EnterpriseHourlyProfile,
-    PublicServiceHourlyProfile,
-)
+
+from app.db.core import get_engine
+from app.grid.domain import Building
+import app.categories.domain as categories
+import app.explorations.domain as explorations
 
 
 class ElectricalDemand(pydantic.BaseModel):
@@ -93,7 +87,9 @@ def classify_area_type(df_centroids: pd.DataFrame) -> str:
 def get_theoretical_distribution(
     df_centroids: pd.DataFrame, session: sqlmodel.Session
 ) -> dict[str, int]:
-    category_distribution_obj = session.exec(sqlmodel.select(CategoryDistribution)).first()
+    category_distribution_obj = session.exec(
+        sqlmodel.select(explorations.CategoryDistribution)
+    ).first()
     if not category_distribution_obj:
         raise ValueError("No CategoryDistribution data found in the database.")
 
@@ -179,20 +175,22 @@ def adjust_distribution(
 def expand_hourly(
     daily_demand: dict[str, float],
     session: sqlmodel.Session,
-    ProfileModel: type[HouseholdHourlyProfile]
-    | type[EnterpriseHourlyProfile]
-    | type[PublicServiceHourlyProfile],
+    ProfileModel: type[categories.HouseholdHourlyProfile]
+    | type[categories.EnterpriseHourlyProfile]
+    | type[categories.PublicServiceHourlyProfile],
     area_type: str | None = None,
 ) -> dict[str, dict[str, float]]:
     result: dict[str, dict[str, float]] = {}
     for subcategory in daily_demand.keys():
         result[subcategory] = {}
         query = sqlmodel.select(ProfileModel).where(ProfileModel.subcategory == subcategory)
-        if area_type and ProfileModel is HouseholdHourlyProfile:
+        if area_type and ProfileModel is categories.HouseholdHourlyProfile:
             query = query.where(ProfileModel.area_type == area_type)
 
         profile_obj: (
-            HouseholdHourlyProfile | EnterpriseHourlyProfile | PublicServiceHourlyProfile
+            categories.HouseholdHourlyProfile
+            | categories.EnterpriseHourlyProfile
+            | categories.PublicServiceHourlyProfile
         ) = session.exec(query).one()
         profile: dict[str, float] = profile_obj.hourly_profile
 
@@ -301,7 +299,9 @@ def calculate_demand(
 
     households_subcategory_data = list(
         session.exec(
-            sqlmodel.select(HouseholdData).where(HouseholdData.area_type == area_type)
+            sqlmodel.select(categories.HouseholdData).where(
+                categories.HouseholdData.area_type == area_type
+            )
         ).all()
     )
     households_subcategory_data_dict = {
@@ -310,7 +310,9 @@ def calculate_demand(
 
     enterprise_subcategory_data = list(
         session.exec(
-            sqlmodel.select(EnterpriseData).where(EnterpriseData.area_type == area_type)
+            sqlmodel.select(categories.EnterpriseData).where(
+                categories.EnterpriseData.area_type == area_type
+            )
         ).all()
     )
     enterprise_subcategory_data_dict = {
@@ -319,7 +321,9 @@ def calculate_demand(
 
     public_services_subcategory_data = list(
         session.exec(
-            sqlmodel.select(PublicServiceData).where(PublicServiceData.area_type == area_type)
+            sqlmodel.select(categories.PublicServiceData).where(
+                categories.PublicServiceData.area_type == area_type
+            )
         ).all()
     )
     public_services_subcategory_data_dict = {
@@ -372,13 +376,13 @@ def calculate_demand(
     }
 
     total_household_hourly = expand_hourly(
-        total_household_daily, session, HouseholdHourlyProfile, area_type
+        total_household_daily, session, categories.HouseholdHourlyProfile, area_type
     )
     total_enterprise_hourly = expand_hourly(
-        total_enterprise_daily, session, EnterpriseHourlyProfile
+        total_enterprise_daily, session, categories.EnterpriseHourlyProfile
     )
     total_public_service_hourly = expand_hourly(
-        total_public_daily, session, PublicServiceHourlyProfile
+        total_public_daily, session, categories.PublicServiceHourlyProfile
     )
 
     result = build_annual_demand(
