@@ -16,7 +16,7 @@ import fastapi
 import fastapi.middleware.cors
 
 import app._version
-import app.categories.api as categories
+import app.profiles.api as profiles
 import app.explorations.api as explorations
 import app.features.api as features
 import app.general.api as general
@@ -30,14 +30,14 @@ This can be run using either the ``fastapi`` executable or the ``uvicorn`` execu
 
 
 class Tags(Enum):
-    categories = "Building categories and their demand profiles"
+    profiles = "Demand profiles"
     explorations = "Potential minigrid search"
     features = "Country features"
     general = "General"
 
 
 api.include_router(general.router, prefix="", tags=[Tags.general])
-api.include_router(categories.router, prefix="/categories", tags=[Tags.categories])
+api.include_router(profiles.router, prefix="/profiles", tags=[Tags.profiles])
 api.include_router(explorations.router, prefix="/explorations", tags=[Tags.explorations])
 api.include_router(features.router, prefix="/features", tags=[Tags.features])
 

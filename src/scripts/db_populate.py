@@ -11,7 +11,7 @@ import json
 import typing
 
 import app.grid.domain as grid
-import app.categories.domain as categories
+import app.profiles.domain as profiles
 import app.explorations.domain as explorations
 
 
@@ -396,13 +396,13 @@ def populate_household_data(session: sqlmodel.Session, data: dict[str, typing.An
     print("Populating HouseholdData...")
 
     # Check if data already exists
-    if session.exec(sqlmodel.select(categories.HouseholdData)).first():
+    if session.exec(sqlmodel.select(profiles.HouseholdData)).first():
         print("  HouseholdData already exists, skipping.")
         return
 
     for area_type, subcategories in data["households_subcategory_data"].items():
         for subcategory, values in subcategories.items():
-            household_data = categories.HouseholdData(
+            household_data = profiles.HouseholdData(
                 area_type=area_type,
                 subcategory=subcategory,
                 kwh_per_day=values["kwh_per_day"],
@@ -418,13 +418,13 @@ def populate_enterprise_data(session: sqlmodel.Session, data: dict[str, typing.A
     print("Populating EnterpriseData...")
 
     # Check if data already exists
-    if session.exec(sqlmodel.select(categories.EnterpriseData)).first():
+    if session.exec(sqlmodel.select(profiles.EnterpriseData)).first():
         print("  EnterpriseData already exists, skipping.")
         return
 
     for area_type, subcategories in data["enterprise_subcategory_data"].items():
         for subcategory, values in subcategories.items():
-            enterprise_data = categories.EnterpriseData(
+            enterprise_data = profiles.EnterpriseData(
                 area_type=area_type,
                 subcategory=subcategory,
                 kwh_per_day=values["kwh_per_day"],
@@ -440,13 +440,13 @@ def populate_public_service_data(session: sqlmodel.Session, data: dict[str, typi
     print("Populating PublicServiceData...")
 
     # Check if data already exists
-    if session.exec(sqlmodel.select(categories.PublicServiceData)).first():
+    if session.exec(sqlmodel.select(profiles.PublicServiceData)).first():
         print("  PublicServiceData already exists, skipping.")
         return
 
     for area_type, subcategories in data["public_services_subcategory_data"].items():
         for subcategory, values in subcategories.items():
-            public_service_data = categories.PublicServiceData(
+            public_service_data = profiles.PublicServiceData(
                 area_type=area_type,
                 subcategory=subcategory,
                 kwh_per_day=values["kwh_per_day"],
@@ -462,7 +462,7 @@ def populate_household_hourly_profile(session: sqlmodel.Session, data: dict[str,
     print("Populating HouseholdHourlyProfile...")
 
     # Check if data already exists
-    if session.exec(sqlmodel.select(categories.HouseholdHourlyProfile)).first():
+    if session.exec(sqlmodel.select(profiles.HouseholdHourlyProfile)).first():
         print("  HouseholdHourlyProfile already exists, skipping.")
         return
 
@@ -472,7 +472,7 @@ def populate_household_hourly_profile(session: sqlmodel.Session, data: dict[str,
             if not isinstance(values, dict) or "hourly_profile" not in values:
                 continue
 
-            household_profile = categories.HouseholdHourlyProfile(
+            household_profile = profiles.HouseholdHourlyProfile(
                 area_type=area_type,
                 subcategory=subcategory,
                 hourly_profile=values["hourly_profile"],  # pyright: ignore[reportUnknownArgumentType]
@@ -487,12 +487,12 @@ def populate_enterprise_hourly_profile(session: sqlmodel.Session, data: dict[str
     print("Populating EnterpriseHourlyProfile...")
 
     # Check if data already exists
-    if session.exec(sqlmodel.select(categories.EnterpriseHourlyProfile)).first():
+    if session.exec(sqlmodel.select(profiles.EnterpriseHourlyProfile)).first():
         print("  EnterpriseHourlyProfile already exists, skipping.")
         return
 
     for subcategory, values in data["enterprise_hourly_profiles"].items():
-        enterprise_profile = categories.EnterpriseHourlyProfile(
+        enterprise_profile = profiles.EnterpriseHourlyProfile(
             subcategory=subcategory, hourly_profile=values["hourly_profile"]
         )
         session.add(enterprise_profile)
@@ -505,12 +505,12 @@ def populate_public_service_hourly_profile(session: sqlmodel.Session, data: dict
     print("Populating PublicServiceHourlyProfile...")
 
     # Check if data already exists
-    if session.exec(sqlmodel.select(categories.PublicServiceHourlyProfile)).first():
+    if session.exec(sqlmodel.select(profiles.PublicServiceHourlyProfile)).first():
         print("  PublicServiceHourlyProfile already exists, skipping.")
         return
 
     for subcategory, values in data["public_service_hourly_profile"].items():
-        public_service_profile = categories.PublicServiceHourlyProfile(
+        public_service_profile = profiles.PublicServiceHourlyProfile(
             subcategory=subcategory, hourly_profile=values["hourly_profile"]
         )
         session.add(public_service_profile)

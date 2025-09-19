@@ -10,7 +10,7 @@ import datetime
 
 from app.db.core import get_engine
 from app.grid.domain import Building
-import app.categories.domain as categories
+import app.profiles.domain as profiles
 import app.explorations.domain as explorations
 
 
@@ -175,22 +175,22 @@ def adjust_distribution(
 def expand_hourly(
     daily_demand: dict[str, float],
     session: sqlmodel.Session,
-    ProfileModel: type[categories.HouseholdHourlyProfile]
-    | type[categories.EnterpriseHourlyProfile]
-    | type[categories.PublicServiceHourlyProfile],
+    ProfileModel: type[profiles.HouseholdHourlyProfile]
+    | type[profiles.EnterpriseHourlyProfile]
+    | type[profiles.PublicServiceHourlyProfile],
     area_type: str | None = None,
 ) -> dict[str, dict[str, float]]:
     result: dict[str, dict[str, float]] = {}
     for subcategory in daily_demand.keys():
         result[subcategory] = {}
         query = sqlmodel.select(ProfileModel).where(ProfileModel.subcategory == subcategory)
-        if area_type and ProfileModel is categories.HouseholdHourlyProfile:
+        if area_type and ProfileModel is profiles.HouseholdHourlyProfile:
             query = query.where(ProfileModel.area_type == area_type)
 
         profile_obj: (
-            categories.HouseholdHourlyProfile
-            | categories.EnterpriseHourlyProfile
-            | categories.PublicServiceHourlyProfile
+            profiles.HouseholdHourlyProfile
+            | profiles.EnterpriseHourlyProfile
+            | profiles.PublicServiceHourlyProfile
         ) = session.exec(query).one()
         profile: dict[str, float] = profile_obj.hourly_profile
 
@@ -299,8 +299,8 @@ def calculate_demand(
 
     households_subcategory_data = list(
         session.exec(
-            sqlmodel.select(categories.HouseholdData).where(
-                categories.HouseholdData.area_type == area_type
+            sqlmodel.select(profiles.HouseholdData).where(
+                profiles.HouseholdData.area_type == area_type
             )
         ).all()
     )
@@ -310,8 +310,8 @@ def calculate_demand(
 
     enterprise_subcategory_data = list(
         session.exec(
-            sqlmodel.select(categories.EnterpriseData).where(
-                categories.EnterpriseData.area_type == area_type
+            sqlmodel.select(profiles.EnterpriseData).where(
+                profiles.EnterpriseData.area_type == area_type
             )
         ).all()
     )
@@ -321,8 +321,8 @@ def calculate_demand(
 
     public_services_subcategory_data = list(
         session.exec(
-            sqlmodel.select(categories.PublicServiceData).where(
-                categories.PublicServiceData.area_type == area_type
+            sqlmodel.select(profiles.PublicServiceData).where(
+                profiles.PublicServiceData.area_type == area_type
             )
         ).all()
     )
@@ -376,13 +376,13 @@ def calculate_demand(
     }
 
     total_household_hourly = expand_hourly(
-        total_household_daily, session, categories.HouseholdHourlyProfile, area_type
+        total_household_daily, session, profiles.HouseholdHourlyProfile, area_type
     )
     total_enterprise_hourly = expand_hourly(
-        total_enterprise_daily, session, categories.EnterpriseHourlyProfile
+        total_enterprise_daily, session, profiles.EnterpriseHourlyProfile
     )
     total_public_service_hourly = expand_hourly(
-        total_public_daily, session, categories.PublicServiceHourlyProfile
+        total_public_daily, session, profiles.PublicServiceHourlyProfile
     )
 
     result = build_annual_demand(
