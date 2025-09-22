@@ -10,7 +10,7 @@ import fiona  # type: ignore
 import json
 import typing
 
-import app.grid.domain as grid
+import app.features.domain as grid
 import app.profiles.domain as profiles
 import app.explorations.domain as explorations
 

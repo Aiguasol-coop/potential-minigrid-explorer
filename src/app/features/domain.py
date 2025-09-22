@@ -84,8 +84,8 @@ class MiniGridBase(sqlmodel.SQLModel):
     max_building_distance: float | None = None
     distance_to_grid: float | None = None
     start_date: datetime.datetime | None = None
-    distance_to_road: float | None = sqlmodel.Field(default=None)
-    island: bool | None = sqlmodel.Field(default=None)
+    distance_to_road: float | None = None
+    island: bool | None = None
 
 
 class MiniGrid(MiniGridBase, geography.HasPointColumn, table=True):

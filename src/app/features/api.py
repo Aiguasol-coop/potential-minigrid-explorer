@@ -1,21 +1,29 @@
+from typing import Any
+import uuid
+
 import fastapi
+import pydantic
 import sqlmodel
 from geoalchemy2 import Geometry, shape
 from geoalchemy2 import functions as geofunc
 import geojson_pydantic as geopydantic
-import pydantic
 import shapely
 import sqlalchemy
 from sqlalchemy.sql.elements import ColumnElement
-from typing import Any
-import uuid
 
 import app.db.core as db
 import app.service_offgrid_planner.demand as demand
-import app.grid.domain as grid
 import app.shared.bounding_box as bounding_box
 import app.shared.geography as geography
 import app.utils as utils
+from app.features.domain import (
+    GridDistributionLine,
+    GridDistributionLineBase,
+    MinigridStatus,
+    MiniGrid,
+    Road,
+    Building,
+)
 
 
 ####################################################################################################
@@ -35,13 +43,13 @@ class RoadsResponse(sqlmodel.SQLModel):
     geography: geopydantic.LineString
 
 
-class GridDistributionLineResponse(grid.GridDistributionLineBase, geography.HasLinestringAttribute):
+class GridDistributionLineResponse(GridDistributionLineBase, geography.HasLinestringAttribute):
     geography: geopydantic.LineString
 
 
 class ExistingMinigrid(sqlmodel.SQLModel):
     id: pydantic.UUID7
-    status: grid.MinigridStatus
+    status: MinigridStatus
     name: str | None = None
     operator: str | None = None
     pv_capacity: float | None = None
@@ -67,13 +75,11 @@ def get_buildings_by_bbox(
     min_lon, min_lat, max_lon, max_lat = bbox.parts
     envelope = geofunc.ST_MakeEnvelope(min_lon, min_lat, max_lon, max_lat, 4326)
     centroid_geom: ColumnElement[Any] = sqlalchemy.cast(
-        grid.Building.pg_geography_centroid, Geometry(geometry_type="POINT", srid=4326)
+        Building.pg_geography_centroid, Geometry(geometry_type="POINT", srid=4326)
     )
 
-    cluster_centroids: list[grid.Building] = list(
-        db.exec(
-            sqlmodel.select(grid.Building).where(geofunc.ST_Within(centroid_geom, envelope))
-        ).all()
+    cluster_centroids: list[Building] = list(
+        db.exec(sqlmodel.select(Building).where(geofunc.ST_Within(centroid_geom, envelope))).all()
     )
     buildings: list[BuildingResponse] = []
     for building in cluster_centroids:
@@ -94,15 +100,15 @@ def get_country_roads(
     db: db.Session,
     bbox: str | None = fastapi.Query(default=None),
 ) -> list[RoadsResponse]:
-    query = sqlmodel.select(grid.Road)
+    query = sqlmodel.select(Road)
 
     if bbox:
         min_lon, min_lat, max_lon, max_lat = bounding_box.BoundingBox(bbox=bbox).parts
         envelope = sqlalchemy.func.ST_MakeEnvelope(min_lon, min_lat, max_lon, max_lat, 4326)
-        query = query.where(sqlalchemy.func.ST_Intersects(grid.Road.pg_geography, envelope))
+        query = query.where(sqlalchemy.func.ST_Intersects(Road.pg_geography, envelope))
     else:
         query = query.where(
-            grid.Road.road_type.in_(  # type: ignore
+            Road.road_type.in_(  # type: ignore
                 [
                     "motorway",
                     "trunk",
@@ -123,7 +129,7 @@ def get_country_roads(
 
 @router.get("/grid")
 def get_grid_network(db: db.Session) -> list[GridDistributionLineResponse]:
-    grid_network = db.exec(sqlmodel.select(grid.GridDistributionLine)).all()
+    grid_network = db.exec(sqlmodel.select(GridDistributionLine)).all()
 
     if not grid_network:
         raise fastapi.HTTPException(
@@ -137,7 +143,7 @@ def get_grid_network(db: db.Session) -> list[GridDistributionLineResponse]:
 def get_existing_minigrids(
     db: db.Session,
 ) -> list[ExistingMinigrid]:
-    db_existing_minigrids = db.exec(sqlmodel.select(grid.MiniGrid)).all()
+    db_existing_minigrids = db.exec(sqlmodel.select(MiniGrid)).all()
 
     if not db_existing_minigrids:
         raise fastapi.HTTPException(
@@ -176,8 +182,8 @@ def notify_existing_minigrid(db: db.Session, minigrid: ExistingMinigrid) -> util
 
     tol_meters = 1.0
     existing = db.exec(
-        sqlmodel.select(grid.MiniGrid).where(
-            sqlalchemy.func.ST_DWithin(grid.MiniGrid.pg_geography, pt, tol_meters)
+        sqlmodel.select(MiniGrid).where(
+            sqlalchemy.func.ST_DWithin(MiniGrid.pg_geography, pt, tol_meters)
         )
     ).first()
 
@@ -186,10 +192,10 @@ def notify_existing_minigrid(db: db.Session, minigrid: ExistingMinigrid) -> util
             status_code=409, detail=f"Minigrid at same location already exists (id={existing.id})."
         )
 
-    db_minigrid = grid.MiniGrid(
+    db_minigrid = MiniGrid(
         id=str(minigrid.id),
         name=minigrid.name,
-        status=grid.MinigridStatus(minigrid.status.value),
+        status=MinigridStatus(minigrid.status.value),
         operator=minigrid.operator,
         pv_power=minigrid.pv_capacity,
         estimated_power=minigrid.pv_estimated,

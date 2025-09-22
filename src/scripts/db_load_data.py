@@ -8,7 +8,7 @@ import app.settings
 
 # Import table definitions for create_all()
 import app.explorations.domain  # type: ignore
-import app.grid.domain  # type: ignore
+import app.features.domain  # type: ignore
 
 
 from scripts.db_populate import populate_db, populate_default_db

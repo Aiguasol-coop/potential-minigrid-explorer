@@ -9,7 +9,7 @@ import pandas as pd
 import datetime
 
 from app.db.core import get_engine
-from app.grid.domain import Building
+from app.features.domain import Building
 import app.profiles.domain as profiles
 import app.explorations.domain as explorations
 
@@ -416,5 +416,5 @@ if __name__ == "__main__":
 
         demand: ElectricalDemand = calculate_demand(cluster_centroids, session)
 
-        print(f"Total Annual Demand: {demand.total_annual_demand}")
         print(f"Hourly Annual Demand: {demand.hourly_annual_demand}")
+        print(f"Total Annual Demand: {demand.total_annual_demand}")
