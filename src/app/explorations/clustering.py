@@ -10,13 +10,16 @@ from datetime import datetime
 from itertools import combinations
 import os
 
+import geojson_pydantic as geopydantic
 from geopy.distance import geodesic, great_circle  # pyright: ignore[reportMissingTypeStubs]
 import pandas as pd
 import sqlmodel
 from sklearn.cluster import DBSCAN
 
 import app.db.core as db
+import app.explorations.domain as explorations
 import app.features.domain as features
+import app.shared.geography as geography
 from app.explorations.plotting import plot_buildings_and_grid_lines_with_distance
 
 
@@ -39,6 +42,10 @@ PROVINCES = [  # Adjacent number is the building count
     # "Tete",  # 515487
     # "Zambezia",  # 540639
 ]
+
+
+class ClusterCreate(explorations.ClusterBase, geography.HasPointAttribute):
+    geography: geopydantic.Point
 
 
 def cluster_buildings(
@@ -219,9 +226,11 @@ def get_existing_mini_grids() -> Sequence[features.MiniGrid]:
 # primary	1523
 
 
-def generate_clusters_only(grid_distance_km: int = 60, all_provinces_at_once: bool = False):
+def generate_clusters_only(
+    grid_distance_km: int = 60, all_provinces_at_once: bool = False, save_to_csv: bool = False
+):
     cluster_records = []
-    centroid_records = []
+    building_records = []
     all_valid_buildings = []
     all_valid_clusters: dict[int, list[tuple[float, float]]] = {}
     num_clusters = 0
@@ -285,71 +294,100 @@ def generate_clusters_only(grid_distance_km: int = 60, all_provinces_at_once: bo
             max_diameter=DIAMETER_KM * 1000,
         )
 
-    cluster_id_counter = 1
-    for _cluster_id, cluster_points in all_valid_clusters.items():
-        clat = sum(lat for lat, _ in cluster_points) / len(cluster_points)
-        clon = sum(lon for _, lon in cluster_points) / len(cluster_points)
+    with db.get_logging_session(name="Write clusters") as session:
+        cluster_id_counter = 1
+        for _cluster_id, cluster_points in all_valid_clusters.items():
+            clat = sum(lat for lat, _ in cluster_points) / len(cluster_points)
+            clon = sum(lon for _, lon in cluster_points) / len(cluster_points)
 
-        # Skip clusters too close to existing mini-grids
-        too_close = any(
-            geodesic(
-                (clat, clon),
-                (mg.geography.coordinates.latitude, mg.geography.coordinates.longitude),
-            ).km
-            < MATCH_DISTANCE_KM
-            for mg in mini_grids
-        )
-        if too_close:
-            continue
-
-        # Calculate average surface and road distance for the cluster
-        members = [i for i, pt in enumerate(all_valid_coords) if pt in cluster_points]
-        surfaces = [
-            all_valid_buildings[i]["surface"]
-            for i in members
-            if all_valid_buildings[i]["surface"] is not None
-        ]
-        avg_surface = sum(surfaces) / len(surfaces) if surfaces else 0
-        cluster_records.append(
-            {
-                "cluster_id": cluster_id_counter,
-                "latitude": clat,
-                "longitude": clon,
-                "province": all_valid_buildings[members[0]]["province"],
-                "num_buildings": len(members),
-                "distance_to_grid_m": all_valid_buildings[members[0]]["dist_grid"],
-                "avg_distance_to_road_m": sum(all_valid_buildings[i]["dist_road"] for i in members)
-                / len(members),
-                "avg_surface": avg_surface,
-                "eps_meters": EPS_VALUE,
-                "diameter_km": DIAMETER_KM,
-                "grid_distance_km": grid_distance_km,
-            }
-        )
-
-        # Add building-level information per cluster
-        for i in members:
-            centroid_records.append(
-                {
-                    "cluster_id": cluster_id_counter,
-                    "id_shp": all_valid_buildings[i]["id_shp"],
-                    "building_type": all_valid_buildings[i]["building_type"],
-                    "surface": all_valid_buildings[i]["surface"],
-                    "latitude": all_valid_buildings[i]["lat"],
-                    "longitude": all_valid_buildings[i]["lon"],
-                }
+            # Skip clusters too close to existing mini-grids
+            too_close = any(
+                geodesic(
+                    (clat, clon),
+                    (mg.geography.coordinates.latitude, mg.geography.coordinates.longitude),
+                ).km
+                < MATCH_DISTANCE_KM
+                for mg in mini_grids
             )
-        cluster_id_counter += 1
+            if too_close:
+                continue
 
-    # Save results to CSV files
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    os.makedirs("outputs", exist_ok=True)
-    pd.DataFrame(cluster_records).to_csv(f"outputs/filtered_clusters_{timestamp}.csv", index=False)
-    pd.DataFrame(centroid_records).to_csv(
-        f"outputs/centroids_per_cluster_{timestamp}.csv", index=False
-    )
-    print("\n📁 Clustering results saved.")
+            # Calculate average surface and road distance for the cluster
+            members = [i for i, pt in enumerate(all_valid_coords) if pt in cluster_points]
+            surfaces = [
+                all_valid_buildings[i]["surface"]
+                for i in members
+                if all_valid_buildings[i]["surface"] is not None
+            ]
+            avg_surface = sum(surfaces) / len(surfaces) if surfaces else 0
+            cluster = ClusterCreate(
+                geography=geopydantic.Point(**{"type": "Point", "coordinates": [clon, clat]}),
+                cluster_id=cluster_id_counter,
+                province=all_valid_buildings[members[0]]["province"],
+                num_buildings=len(members),
+                distance_to_grid_m=all_valid_buildings[members[0]]["dist_grid"],
+                avg_distance_to_road_m=sum(all_valid_buildings[i]["dist_road"] for i in members)
+                / len(members),
+                avg_surface=avg_surface,
+                eps_meters=EPS_VALUE,
+                diameter_km=DIAMETER_KM,
+                grid_distance_km=grid_distance_km,
+                buildings=[],
+            )
+            cluster_records.append(
+                cluster.model_dump(
+                    include={
+                        "cluster_id",
+                        "latitude",
+                        "longitude",
+                        "province",
+                        "num_buildings",
+                        "distance_to_grid_m",
+                        "avg_distance_to_road_m",
+                        "avg_surface",
+                        "eps_meters",
+                        "diameter_km",
+                        "grid_distance_km",
+                    }
+                )
+            )
+
+            # Add building-level information per cluster
+            for i in members:
+                building = explorations.ClusterBuilding(
+                    building_id=all_valid_buildings[i]["id_shp"],
+                    building_type=all_valid_buildings[i]["building_type"],
+                    surface=all_valid_buildings[i]["surface"],
+                    latitude=all_valid_buildings[i]["lat"],
+                    longitude=all_valid_buildings[i]["lon"],
+                )
+                cluster.buildings.append(building)
+                building_records.append(
+                    building.model_dump().update({"cluster_id": cluster_id_counter})
+                )
+
+            db_cluster = explorations.Cluster(
+                **cluster.model_dump(), pg_geography=cluster.pg_geography
+            )
+            session.add(db_cluster)
+            session.flush()
+
+            cluster_id_counter += 1
+
+        session.commit()
+        print("\n📁 Clustering results saved to DB.")
+
+    if save_to_csv:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        os.makedirs("outputs", exist_ok=True)
+        pd.DataFrame(cluster_records).to_csv(
+            f"outputs/filtered_clusters_{timestamp}.csv", index=False
+        )
+        pd.DataFrame(building_records).to_csv(
+            f"outputs/centroids_per_cluster_{timestamp}.csv", index=False
+        )
+        print("\n📁 Clustering results saved to CSV.")
 
 
 if __name__ == "__main__":
-    generate_clusters_only(all_provinces_at_once=True)
+    generate_clusters_only(save_to_csv=True)
