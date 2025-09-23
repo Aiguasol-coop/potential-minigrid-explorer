@@ -182,3 +182,5 @@ database/sandbox/
 
 values.yaml
 secrets.yaml
+outputs/*
+!outputs/.GITKEEP

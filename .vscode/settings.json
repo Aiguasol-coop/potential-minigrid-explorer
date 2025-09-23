@@ -55,4 +55,5 @@
     "python.analysis.extraPaths": [
         "tests"
     ],
+    "commentAnchors.workspace.excludeFiles": "**/{.venv,node_modules,.git,.idea,target,out,build,bin,obj,dist,vendor}/**/*",
 }

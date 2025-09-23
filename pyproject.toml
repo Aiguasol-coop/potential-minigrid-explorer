@@ -7,13 +7,16 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
+    "branca>=0.8.1",
     "faker>=37.1.0",
     "fastapi[standard]>=0.115.11",
     "fiona>=1.10.1",
+    "folium>=0.20.0",
     "geoalchemy2>=0.17.1",
     "geojson>=3.2.0",
     "geojson-pydantic>=2.0.0",
     "geopandas>=1.1.0",
+    "geopy>=2.4.1",
     "optional-faker>=2.1.0",
     "pandas>=2.3.0",
     "psycopg>=3.2.6",
@@ -22,6 +25,7 @@ dependencies = [
     "pyjwt[crypto]>=2.10.1",
     "python-dotenv>=1.0.1",
     "requests>=2.32.3",
+    "scikit-learn>=1.7.2",
     "shapely>=2.1.1",
     "sqlmodel>=0.0.24",
     "test-client>=0.1",
