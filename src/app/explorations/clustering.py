@@ -27,15 +27,15 @@ GRID_DISTANCES = [20, 40, 60, 80, 100, 120]  # Only 60 will be used in this scri
 MIN_BUILDINGS = 100
 MATCH_DISTANCE_KM = 5
 PROVINCES = [  # Adjacent number is the building count
-    "Cabo Delga",  # 449720
+    # "Cabo Delga",  # 449720
     # "Gaza",  # 83771
-    # "Inhambane",  # 99401
+    "Inhambane",  # 99401
     # "Manica",  # 97937
     # "Maputo",  # 9648
     # "Maputo Cit",  # 2200
     # "Nampula",  # 686715
     # "Niassa",  # 318785
-    # "Sofala",  # 91996
+    "Sofala",  # 91996
     # "Tete",  # 515487
     # "Zambezia",  # 540639
 ]
@@ -102,6 +102,7 @@ def cluster_buildings(
             outlier_centroids.append(centroids[idx])
         else:
             clusters.setdefault(label, []).append(centroids[idx])
+
     # Filter clusters by maximum diameter
     for label, points in clusters.items():
         if len(points) < 2:
@@ -119,7 +120,7 @@ def get_buildings_by_distance_from_grid(
     min_grid_distance_km: float,
     province: str = None,
     plot: bool = False,
-):  # -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
+) -> Sequence[features.Building]:
     """
     Retrieve building centroids that are farther than a specified distance from the grid, optionally
     filtered by province.
@@ -131,8 +132,6 @@ def get_buildings_by_distance_from_grid(
             If provided, filters buildings by province name.
         plot : bool
             Whether to generate a distance-to-grid folium plot.
-    Returns
-        Tuple of valid and discarded centroids.
     """
     min_distance_meters = min_grid_distance_km * 1000
     centroids, distances_km = [], []
@@ -147,17 +146,8 @@ def get_buildings_by_distance_from_grid(
         if province:
             stmt = stmt.where(features.Building.province == province)
         results = session.exec(stmt).all()
-        num_centroids = 0
-        for building in results:
-            if building.centroid_geography:
-                num_centroids += 1
-                coords = building.centroid_geography
-                try:
-                    # TODO: Check if lat,lon is the order we need
-                    centroids.append((coords.coordinates.latitude, coords.coordinates.longitude))
-                    distances_km.append(building.distance_to_grid / 1000.0)  # type: ignore
-                except Exception:
-                    continue
+
+        # TODO: this version of plotting code is not tested
         if plot:
             discarded_stmt = sqlmodel.select(features.Building).where(
                 features.Building.distance_to_grid < min_distance_meters
@@ -167,11 +157,23 @@ def get_buildings_by_distance_from_grid(
             if province:
                 discarded_stmt = discarded_stmt.where(features.Building.province == province)
             discarded_results = session.exec(discarded_stmt).all()
+            for building in results:
+                if building.centroid_geography:
+                    coords = building.centroid_geography
+                    try:
+                        centroids.append(
+                            (coords.coordinates.latitude, coords.coordinates.longitude)
+                        )
+                        distances_km.append(building.distance_to_grid / 1000.0)  # type: ignore
+                    except Exception:
+                        continue
             for building in discarded_results:
                 if building.centroid_geography:
                     coords = building.centroid_geography
                     try:
-                        discarded_centroids.append((coords.y, coords.x))
+                        discarded_centroids.append(
+                            (coords.coordinates.latitude, coords.coordinates.longitude)
+                        )
                         discarded_distances_km.append(building.distance_to_grid / 1000.0)  # type: ignore
                     except Exception:
                         continue
@@ -187,18 +189,8 @@ def get_buildings_by_distance_from_grid(
             map_obj.save(
                 os.path.join(os.getcwd(), "plots", f"centroids_distance_{province or 'all'}.html")
             )
-    return centroids, [
-        {
-            "building_id": b.id_shp,
-            "distance_to_road": b.distance_to_road,
-            "is_island": b.is_island,
-            "building_type": b.building_type,
-            "surface": b.surface,
-            "dist_grid": b.distance_to_grid,
-        }
-        for b in results
-        if b.centroid_geography
-    ]
+
+    return results
 
 
 def get_existing_mini_grids() -> Sequence[features.MiniGrid]:
@@ -227,125 +219,127 @@ def get_existing_mini_grids() -> Sequence[features.MiniGrid]:
 # primary	1523
 
 
-def generate_clusters_only():
-    print("🔄 Initializing database and retrieving data...")
-    mini_grids = get_existing_mini_grids()
-
-    # TODO: following commented out variable not used, check if necessary
-    # grid_lines = get_grid_lines()
+def generate_clusters_only(grid_distance_km: int = 60, all_provinces_at_once: bool = False):
     cluster_records = []
     centroid_records = []
+    all_valid_buildings = []
+    all_valid_clusters: dict[int, list[tuple[float, float]]] = {}
+    num_clusters = 0
 
-    for grid_distance in [60]:  # only grid distance 60 km
-        print(f"\n🌍 Grid distance ≥ {grid_distance} km")
-        all_centroids = []
+    print(f"\n🌍 Grid distance ≥ {grid_distance_km} km")
 
-        for province in PROVINCES:
-            # Retrieve building centroids and associated info from DB
-            centroids, buildings_info = get_buildings_by_distance_from_grid(
-                min_grid_distance_km=grid_distance, province=province
+    print("🔄 Retrieving data...")
+    mini_grids = get_existing_mini_grids()
+
+    for province in PROVINCES:
+        # Retrieve building centroids and associated info from DB
+        buildings = get_buildings_by_distance_from_grid(
+            min_grid_distance_km=grid_distance_km, province=province
+        )
+        print(f"🔍 Province: {province}")
+        print(f"   Total returned buildings: {len(buildings)}")
+
+        valid_buildings = []
+        for building in buildings:
+            is_island = building.is_island if building.is_island is not None else False
+            dist_road = (
+                building.distance_to_road if building.distance_to_road is not None else 999999
             )
-
-            print(f"🔍 Province: {province}")
-            print(f"   Total returned buildings: {len(centroids)}")
-
-            valid_count = 0
 
             # TODO: the filtering by distance to road < 1 km can probably be removed (ask Azimut)
             # Filter centroids: keep islands always, others must be < 1 km to road
-            for (lat, lon), info in zip(centroids, buildings_info):
-                if info is None:
-                    continue
+            if is_island or dist_road < 1000:
+                valid_buildings.append(
+                    {
+                        "lat": building.centroid_geography.coordinates.latitude,
+                        "lon": building.centroid_geography.coordinates.longitude,
+                        "province": province,
+                        "id_shp": building.id_shp,
+                        "building_type": building.building_type,
+                        "surface": building.surface,
+                        "dist_grid": building.distance_to_grid,
+                        "dist_road": building.distance_to_road,
+                    }
+                )
+        all_valid_buildings += valid_buildings
+        print(f"   ✅ Valid after filtering: {len(valid_buildings)}")
 
-                is_island = info.get("is_island", False)
-                dist_road = info.get("distance_to_road", 999999)
+        if not all_provinces_at_once:
+            valid_clusters, _discarded_clusters, _outliers = cluster_buildings(
+                [(c["lat"], c["lon"]) for c in valid_buildings],
+                eps_meters=EPS_VALUE,
+                min_samples=MIN_BUILDINGS,
+                max_diameter=DIAMETER_KM * 1000,
+            )
+            all_valid_clusters.update({i + num_clusters: c for i, c in valid_clusters.items()})
+            num_clusters += len(valid_clusters)
 
-                if is_island or dist_road < 1000:
-                    all_centroids.append(
-                        {
-                            "lat": lat,
-                            "lon": lon,
-                            "province": province,
-                            "id_shp": info.get("building_id"),
-                            "building_type": info.get("building_type"),
-                            "surface": info.get("surface"),
-                            "dist_grid": info.get("dist_grid"),
-                            "dist_road": dist_road,
-                        }
-                    )
-                    valid_count += 1
+    print(f"✅ Total filtered centroids: {len(all_valid_buildings)}")
 
-            print(f"   ✅ Valid after filtering: {valid_count}")
-
-        print(f"✅ Total filtered centroids: {len(all_centroids)}")
-
-        # Prepare coordinates for clustering
-        coords_only = [(c["lat"], c["lon"]) for c in all_centroids]
-
-        valid_clusters, _discarded_clusters, _outliers = cluster_buildings(
-            coords_only,
+    all_valid_coords = [(c["lat"], c["lon"]) for c in all_valid_buildings]
+    if all_provinces_at_once:
+        all_valid_clusters, _discarded_clusters, _outliers = cluster_buildings(
+            all_valid_coords,
             eps_meters=EPS_VALUE,
             min_samples=MIN_BUILDINGS,
             max_diameter=DIAMETER_KM * 1000,
         )
 
-        cluster_id_counter = 1
-        for _cluster_id, cluster_points in valid_clusters.items():
-            clat = sum(lat for lat, _ in cluster_points) / len(cluster_points)
-            clon = sum(lon for _, lon in cluster_points) / len(cluster_points)
+    cluster_id_counter = 1
+    for _cluster_id, cluster_points in all_valid_clusters.items():
+        clat = sum(lat for lat, _ in cluster_points) / len(cluster_points)
+        clon = sum(lon for _, lon in cluster_points) / len(cluster_points)
 
-            # Skip clusters too close to existing mini-grids
-            too_close = any(
-                geodesic(
-                    (clat, clon),
-                    (mg.geography.coordinates.latitude, mg.geography.coordinates.longitude),
-                ).km
-                < MATCH_DISTANCE_KM
-                for mg in mini_grids
-            )
-            if too_close:
-                continue
+        # Skip clusters too close to existing mini-grids
+        too_close = any(
+            geodesic(
+                (clat, clon),
+                (mg.geography.coordinates.latitude, mg.geography.coordinates.longitude),
+            ).km
+            < MATCH_DISTANCE_KM
+            for mg in mini_grids
+        )
+        if too_close:
+            continue
 
-            # Calculate average surface and road distance for the cluster
-            members = [i for i, pt in enumerate(coords_only) if pt in cluster_points]
-            surfaces = [
-                all_centroids[i]["surface"]
-                for i in members
-                if all_centroids[i]["surface"] is not None
-            ]
-            avg_surface = sum(surfaces) / len(surfaces) if surfaces else 0
+        # Calculate average surface and road distance for the cluster
+        members = [i for i, pt in enumerate(all_valid_coords) if pt in cluster_points]
+        surfaces = [
+            all_valid_buildings[i]["surface"]
+            for i in members
+            if all_valid_buildings[i]["surface"] is not None
+        ]
+        avg_surface = sum(surfaces) / len(surfaces) if surfaces else 0
+        cluster_records.append(
+            {
+                "cluster_id": cluster_id_counter,
+                "latitude": clat,
+                "longitude": clon,
+                "province": all_valid_buildings[members[0]]["province"],
+                "num_buildings": len(members),
+                "distance_to_grid_m": all_valid_buildings[members[0]]["dist_grid"],
+                "avg_distance_to_road_m": sum(all_valid_buildings[i]["dist_road"] for i in members)
+                / len(members),
+                "avg_surface": avg_surface,
+                "eps_meters": EPS_VALUE,
+                "diameter_km": DIAMETER_KM,
+                "grid_distance_km": grid_distance_km,
+            }
+        )
 
-            cluster_records.append(
+        # Add building-level information per cluster
+        for i in members:
+            centroid_records.append(
                 {
                     "cluster_id": cluster_id_counter,
-                    "latitude": clat,
-                    "longitude": clon,
-                    "province": all_centroids[members[0]]["province"],
-                    "num_buildings": len(members),
-                    "distance_to_grid_m": all_centroids[members[0]]["dist_grid"],
-                    "avg_distance_to_road_m": sum(all_centroids[i]["dist_road"] for i in members)
-                    / len(members),
-                    "avg_surface": avg_surface,
-                    "eps_meters": EPS_VALUE,
-                    "diameter_km": DIAMETER_KM,
-                    "grid_distance_km": grid_distance,
+                    "id_shp": all_valid_buildings[i]["id_shp"],
+                    "building_type": all_valid_buildings[i]["building_type"],
+                    "surface": all_valid_buildings[i]["surface"],
+                    "latitude": all_valid_buildings[i]["lat"],
+                    "longitude": all_valid_buildings[i]["lon"],
                 }
             )
-
-            # Add building-level information per cluster
-            for i in members:
-                centroid_records.append(
-                    {
-                        "cluster_id": cluster_id_counter,
-                        "id_shp": all_centroids[i]["id_shp"],
-                        "building_type": all_centroids[i]["building_type"],
-                        "surface": all_centroids[i]["surface"],
-                        "latitude": all_centroids[i]["lat"],
-                        "longitude": all_centroids[i]["lon"],
-                    }
-                )
-
-            cluster_id_counter += 1
+        cluster_id_counter += 1
 
     # Save results to CSV files
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -358,4 +352,4 @@ def generate_clusters_only():
 
 
 if __name__ == "__main__":
-    generate_clusters_only()
+    generate_clusters_only(all_provinces_at_once=True)
