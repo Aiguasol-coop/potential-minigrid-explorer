@@ -9,30 +9,14 @@ import typing
 import pydantic
 import sqlalchemy
 import sqlalchemy.types
-import sqlalchemy.dialects
 import sqlmodel
-import geoalchemy2
 
 import app.db.core as db
 import app.service_offgrid_planner.grid as grid
 import app.service_offgrid_planner.service as offgrid_planner
 import app.service_offgrid_planner.supply as supply
-import app.shared.geography as geography
 import app.service_offgrid_planner.results as project_result
-
-
-class ExplorationParameters(sqlmodel.SQLModel):
-    consumer_count_min: int = sqlmodel.Field(gt=30, default=100, le=500)
-
-    diameter_max: float = sqlmodel.Field(gt=0.0, default=5000.0, le=10000.0)
-    """Euclidean distance (units: meter) between the two most distant consumers."""
-
-    distance_from_grid_min: float = sqlmodel.Field(ge=20000.0, default=60000.0, le=120000.0)
-    """Units: meter."""
-
-    match_distance_max: float = sqlmodel.Field(ge=100.0, default=5000.0, le=20000.0)
-    """Potential minigrids that are at this distance or less of an already existing minigrid are
-    filtered out. Units: meter."""
+from app.explorations.clustering import Cluster, ClusteringParameters, generate_clusters
 
 
 class ExplorationStatus(str, enum.Enum):
@@ -44,7 +28,7 @@ class ExplorationStatus(str, enum.Enum):
     STOPPED = "STOPPED"
 
 
-class Exploration(ExplorationParameters, table=True):
+class Exploration(ClusteringParameters, table=True):
     id: pydantic.UUID4 = sqlmodel.Field(default_factory=uuid.uuid4, primary_key=True)
 
     status: ExplorationStatus = sqlmodel.Field(
@@ -163,54 +147,6 @@ class Simulation(sqlmodel.SQLModel, table=True):
     )
 
 
-class ClusterBuilding(sqlmodel.SQLModel):
-    building_id: int  # shp_id
-    building_type: str
-    surface: float
-    latitude: float
-    longitude: float
-
-
-class ClusterBase(sqlmodel.SQLModel):
-    cluster_id: int
-    province: str
-    num_buildings: int
-    distance_to_grid_m: float
-    avg_distance_to_road_m: float
-    avg_surface: float
-    eps_meters: float
-    diameter_km: float
-    grid_distance_km: float
-    buildings: list[ClusterBuilding] = sqlmodel.Field(
-        sa_column=sqlalchemy.Column(sqlalchemy.dialects.postgresql.JSONB, nullable=False),  # type: ignore
-        default_factory=list,
-    )
-    lcoe: float | None = None
-    """Levelized cost of energy. Units: $/kWh."""
-    capex: float | None = None
-    """Capital expenditure. Units: $US."""
-    res: float | None = sqlmodel.Field(ge=0.0, le=100.0, default=None)
-    """Renewable energy share."""
-    co2_savings: float | None = None
-    """CO2 emission savings. Units: tonne/year."""
-    consumption_total: float | None = None
-    """Total consumption. Units: kWh/year."""
-
-
-class Cluster(ClusterBase, geography.HasPointColumn, table=True):
-    id: pydantic.UUID4 | None = sqlmodel.Field(
-        default_factory=lambda: str(uuid.uuid4()), primary_key=True, index=True
-    )
-
-    pg_geography: str = sqlmodel.Field(
-        default=None,
-        sa_column=sqlalchemy.Column(
-            geoalchemy2.Geography(geometry_type="POINT", srid=4326), nullable=False
-        ),
-    )
-    create_at: datetime.datetime = sqlmodel.Field(default_factory=lambda: datetime.datetime.now())
-
-
 class ExplorationError(str, enum.Enum):
     start_clustering_failed = "The clustering algorithm could not be launched"
     clustering_algorithm_failed = "The clustering algorithm failed"
@@ -255,7 +191,7 @@ class CategoryDistribution(sqlmodel.SQLModel, table=True):
 
 
 class WorkerFindClusters:
-    def __init__(self, parameters: ExplorationParameters, exploration_id: pydantic.UUID4):
+    def __init__(self, parameters: ClusteringParameters, exploration_id: pydantic.UUID4):
         self._parameters = parameters
         self._exploration_id = exploration_id
         self._result: None | ExplorationError = None
@@ -267,42 +203,25 @@ class WorkerFindClusters:
 
             assert db_exploration
 
-            #  TODO: aquí el codi del Michel (DBSCAN)
-            #
-            ### BEGIN of FAKE code
-
-            FAKE_CLUSTERS_COUNT = 50
-            FAKE_MINIGRIDS_COUNT = 20
-
-            for i in range(FAKE_MINIGRIDS_COUNT):
-                if self._stop_event.is_set():
-                    self._result = None
-                    return self._result
-
-                # We store in the DB only those clusters selected as potential minigrids
-                c = Cluster(
-                    cluster_id=i,
-                    province="A_province",
-                    num_buildings=30,
-                    distance_to_grid_m=1200000,
-                    avg_distance_to_road_m=150000,
-                    avg_surface=40.5,
-                    eps_meters=20,
-                    diameter_km=0.3,
-                    grid_distance_km=1200,
-                    buildings=[],
-                    pg_geography="POINT(2.0 41.0)",
-                )
-                db_session.add(c)
-                db_session.commit()
-                db_session.refresh(c)
-
-            db_exploration.clusters_found = FAKE_CLUSTERS_COUNT
-            db_exploration.minigrids_found = FAKE_MINIGRIDS_COUNT
-            db_session.add(db_exploration)
+            # Truncate table Cluster
+            db_session.execute(sqlmodel.delete(Cluster))
             db_session.commit()
 
-            ### END of FAKE code
+            db_clusters, discarded_clusters, outliers = generate_clusters(
+                db_session, self._parameters
+            )
+            for c in db_clusters:
+                db_session.add(c)
+
+            db_session.commit()
+            print("\n📁 Clustering results saved to DB.")
+
+            db_exploration.clusters_found = (
+                len(db_clusters) + len(discarded_clusters) + len(outliers)
+            )
+            db_exploration.minigrids_found = len(db_clusters)
+            db_session.add(db_exploration)
+            db_session.commit()
 
     def stop(self):
         self._stop_event.set()
@@ -719,7 +638,7 @@ def remove_worker(name: str):
         active_workers.pop(name, None)
 
 
-def worker_exploration(parameters: ExplorationParameters, exploration_id: pydantic.UUID4):
+def worker_exploration(parameters: ClusteringParameters, exploration_id: pydantic.UUID4):
     """Worker to be used as the target of a thread. It creates 4 sub-threads and waits until all of
     them finish."""
 
@@ -771,7 +690,7 @@ def worker_exploration(parameters: ExplorationParameters, exploration_id: pydant
 
 
 def start_exploration(
-    db: db.Session, parameters: ExplorationParameters
+    db: db.Session, parameters: ClusteringParameters
 ) -> pydantic.UUID4 | ExplorationError:
     db_exploration = Exploration.model_validate(parameters)
     db_exploration.status = ExplorationStatus.RUNNING
@@ -835,7 +754,7 @@ def stop_exploration(db: db.Session, exploration_id: pydantic.UUID4):
 if __name__ == "__main__":
     import app.db.core as db
 
-    parameters = ExplorationParameters()
+    parameters = ClusteringParameters()
 
     with sqlmodel.Session(db.get_engine()) as session:
         start_exploration(session, parameters)

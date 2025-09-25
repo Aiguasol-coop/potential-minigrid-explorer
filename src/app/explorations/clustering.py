@@ -6,18 +6,21 @@
 # pyright: reportUnknownVariableType=false
 
 from collections.abc import Sequence
-from datetime import datetime
+import datetime
 from itertools import combinations
 import os
+import uuid
 
+import geoalchemy2
 import geojson_pydantic as geopydantic
 from geopy.distance import geodesic, great_circle  # pyright: ignore[reportMissingTypeStubs]
 import pandas as pd
+import pydantic
+import sqlalchemy
 import sqlmodel
 from sklearn.cluster import DBSCAN
 
 import app.db.core as db
-import app.explorations.domain as explorations
 import app.features.domain as features
 import app.shared.geography as geography
 from app.explorations.plotting import plot_buildings_and_grid_lines_with_distance
@@ -44,7 +47,69 @@ PROVINCES = [  # Adjacent number is the building count
 ]
 
 
-class ClusterCreate(explorations.ClusterBase, geography.HasPointAttribute):
+class ClusteringParameters(sqlmodel.SQLModel):
+    consumer_count_min: int = sqlmodel.Field(gt=30, default=100, le=500)
+
+    diameter_max: float = sqlmodel.Field(gt=0.0, default=5000.0, le=10000.0)
+    """Euclidean distance (units: meter) between the two most distant consumers."""
+
+    distance_from_grid_min: float = sqlmodel.Field(ge=20000.0, default=60000.0, le=120000.0)
+    """Units: meter."""
+
+    match_distance_max: float = sqlmodel.Field(ge=100.0, default=5000.0, le=20000.0)
+    """Potential minigrids that are at this distance or less of an already existing minigrid are
+    filtered out. Units: meter."""
+
+
+class ClusterBuilding(sqlmodel.SQLModel):
+    building_id: int  # shp_id
+    building_type: str
+    surface: float
+    latitude: float
+    longitude: float
+
+
+class ClusterBase(sqlmodel.SQLModel):
+    cluster_id: int
+    province: str
+    num_buildings: int
+    distance_to_grid_m: float
+    avg_distance_to_road_m: float
+    avg_surface: float
+    eps_meters: float
+    diameter_km: float
+    grid_distance_km: float
+    buildings: list[ClusterBuilding] = sqlmodel.Field(
+        sa_column=sqlalchemy.Column(sqlalchemy.dialects.postgresql.JSONB, nullable=False),  # type: ignore
+        default_factory=list,
+    )
+    lcoe: float | None = None
+    """Levelized cost of energy. Units: $/kWh."""
+    capex: float | None = None
+    """Capital expenditure. Units: $US."""
+    res: float | None = sqlmodel.Field(ge=0.0, le=100.0, default=None)
+    """Renewable energy share."""
+    co2_savings: float | None = None
+    """CO2 emission savings. Units: tonne/year."""
+    consumption_total: float | None = None
+    """Total consumption. Units: kWh/year."""
+
+
+class Cluster(ClusterBase, geography.HasPointColumn, table=True):
+    id: pydantic.UUID4 | None = sqlmodel.Field(
+        default_factory=lambda: str(uuid.uuid4()), primary_key=True, index=True
+    )
+
+    pg_geography: str = sqlmodel.Field(
+        default=None,
+        sa_column=sqlalchemy.Column(
+            geoalchemy2.Geography(geometry_type="POINT", srid=4326), nullable=False
+        ),
+    )
+    create_at: datetime.datetime = sqlmodel.Field(default_factory=lambda: datetime.datetime.now())
+
+
+class ClusterCreate(ClusterBase, geography.HasPointAttribute):
     geography: geopydantic.Point
 
 
@@ -124,7 +189,8 @@ def cluster_buildings(
 
 
 def get_buildings_by_distance_from_grid(
-    min_grid_distance_km: float,
+    session: db.Session,
+    min_grid_distance_meters: float,
     province: str = None,
     plot: bool = False,
 ) -> Sequence[features.Building]:
@@ -133,80 +199,75 @@ def get_buildings_by_distance_from_grid(
     filtered by province.
 
     Parameters
-        min_grid_distance_km : float
+        min_grid_distance_meters : float
         Minimum allowed distance from grid (in km).
         province : str, optional
             If provided, filters buildings by province name.
         plot : bool
             Whether to generate a distance-to-grid folium plot.
     """
-    min_distance_meters = min_grid_distance_km * 1000
     centroids, distances_km = [], []
     discarded_centroids, discarded_distances_km = [], []
 
-    with db.get_logging_session() as session:
-        stmt = sqlmodel.select(features.Building).where(
-            features.Building.distance_to_grid >= min_distance_meters
+    stmt = sqlmodel.select(features.Building).where(
+        features.Building.distance_to_grid >= min_grid_distance_meters
+        if features.Building.distance_to_grid is not None
+        else True,
+    )
+    if province:
+        stmt = stmt.where(features.Building.province == province)
+    results = session.exec(stmt).all()
+
+    # TODO: this version of plotting code is not tested
+    if plot:
+        discarded_stmt = sqlmodel.select(features.Building).where(
+            features.Building.distance_to_grid < min_grid_distance_meters
             if features.Building.distance_to_grid is not None
-            else True,
+            else False,
         )
         if province:
-            stmt = stmt.where(features.Building.province == province)
-        results = session.exec(stmt).all()
+            discarded_stmt = discarded_stmt.where(features.Building.province == province)
+        discarded_results = session.exec(discarded_stmt).all()
+        for building in results:
+            if building.centroid_geography:
+                coords = building.centroid_geography
+                try:
+                    centroids.append((coords.coordinates.latitude, coords.coordinates.longitude))
+                    distances_km.append(building.distance_to_grid / 1000.0)  # type: ignore
+                except Exception:
+                    continue
+        for building in discarded_results:
+            if building.centroid_geography:
+                coords = building.centroid_geography
+                try:
+                    discarded_centroids.append(
+                        (coords.coordinates.latitude, coords.coordinates.longitude)
+                    )
+                    discarded_distances_km.append(building.distance_to_grid / 1000.0)  # type: ignore
+                except Exception:
+                    continue
 
-        # TODO: this version of plotting code is not tested
-        if plot:
-            discarded_stmt = sqlmodel.select(features.Building).where(
-                features.Building.distance_to_grid < min_distance_meters
-                if features.Building.distance_to_grid is not None
-                else False,
-            )
-            if province:
-                discarded_stmt = discarded_stmt.where(features.Building.province == province)
-            discarded_results = session.exec(discarded_stmt).all()
-            for building in results:
-                if building.centroid_geography:
-                    coords = building.centroid_geography
-                    try:
-                        centroids.append(
-                            (coords.coordinates.latitude, coords.coordinates.longitude)
-                        )
-                        distances_km.append(building.distance_to_grid / 1000.0)  # type: ignore
-                    except Exception:
-                        continue
-            for building in discarded_results:
-                if building.centroid_geography:
-                    coords = building.centroid_geography
-                    try:
-                        discarded_centroids.append(
-                            (coords.coordinates.latitude, coords.coordinates.longitude)
-                        )
-                        discarded_distances_km.append(building.distance_to_grid / 1000.0)  # type: ignore
-                    except Exception:
-                        continue
-
-            map_obj = plot_buildings_and_grid_lines_with_distance(
-                db,
-                centroids=centroids,
-                distances_km=distances_km,
-                discarded_centroids=discarded_centroids,
-                discarded_distances_km=discarded_distances_km,
-                zoom_start=None,
-            )
-            map_obj.save(
-                os.path.join(os.getcwd(), "plots", f"centroids_distance_{province or 'all'}.html")
-            )
+        map_obj = plot_buildings_and_grid_lines_with_distance(
+            db,
+            centroids=centroids,
+            distances_km=distances_km,
+            discarded_centroids=discarded_centroids,
+            discarded_distances_km=discarded_distances_km,
+            zoom_start=None,
+        )
+        map_obj.save(
+            os.path.join(os.getcwd(), "plots", f"centroids_distance_{province or 'all'}.html")
+        )
 
     return results
 
 
-def get_existing_mini_grids() -> Sequence[features.MiniGrid]:
-    with db.get_logging_session() as session:
-        mini_grids = session.exec(
-            sqlmodel.select(features.MiniGrid).where(
-                features.MiniGrid.status == features.MinigridStatus.known_to_exist
-            )
-        ).all()
+def get_existing_mini_grids(session: db.Session) -> Sequence[features.MiniGrid]:
+    mini_grids = session.exec(
+        sqlmodel.select(features.MiniGrid).where(
+            features.MiniGrid.status == features.MinigridStatus.known_to_exist
+        )
+    ).all()
     return mini_grids
 
 
@@ -226,24 +287,31 @@ def get_existing_mini_grids() -> Sequence[features.MiniGrid]:
 # primary	1523
 
 
-def generate_clusters_only(
-    grid_distance_km: int = 60, all_provinces_at_once: bool = False, save_to_csv: bool = False
-):
+def generate_clusters(
+    session: db.Session,
+    parameters: ClusteringParameters,
+    all_provinces_at_once: bool = False,
+    save_to_csv: bool = False,
+) -> tuple[list[Cluster], dict[int, list[tuple[float, float]]], list[tuple[float, float]]]:
     cluster_records = []
+    db_clusters = []
     building_records = []
     all_valid_buildings = []
     all_valid_clusters: dict[int, list[tuple[float, float]]] = {}
-    num_clusters = 0
+    num_valid_clusters = 0
+    all_discarded_clusters: dict[int, list[tuple[float, float]]] = {}
+    num_discarded_clusters = 0
+    all_outliers: list[tuple[float, float]] = []
 
-    print(f"\n🌍 Grid distance ≥ {grid_distance_km} km")
+    print(f"\n🌍 Grid distance ≥ {parameters.distance_from_grid_min / 1000} km")
 
     print("🔄 Retrieving data...")
-    mini_grids = get_existing_mini_grids()
+    mini_grids = get_existing_mini_grids(session)
 
     for province in PROVINCES:
         # Retrieve building centroids and associated info from DB
         buildings = get_buildings_by_distance_from_grid(
-            min_grid_distance_km=grid_distance_km, province=province
+            session, min_grid_distance_meters=parameters.distance_from_grid_min, province=province
         )
         print(f"🔍 Province: {province}")
         print(f"   Total returned buildings: {len(buildings)}")
@@ -274,108 +342,107 @@ def generate_clusters_only(
         print(f"   ✅ Valid after filtering: {len(valid_buildings)}")
 
         if not all_provinces_at_once:
-            valid_clusters, _discarded_clusters, _outliers = cluster_buildings(
+            valid_clusters, discarded_clusters, outliers = cluster_buildings(
                 [(c["lat"], c["lon"]) for c in valid_buildings],
                 eps_meters=EPS_VALUE,
                 min_samples=MIN_BUILDINGS,
                 max_diameter=DIAMETER_KM * 1000,
             )
-            all_valid_clusters.update({i + num_clusters: c for i, c in valid_clusters.items()})
-            num_clusters += len(valid_clusters)
+            all_valid_clusters.update(
+                {i + num_valid_clusters: c for i, c in valid_clusters.items()}
+            )
+            num_valid_clusters += len(valid_clusters)
+            all_discarded_clusters.update(
+                {i + num_discarded_clusters: c for i, c in discarded_clusters.items()}
+            )
+            num_discarded_clusters += len(discarded_clusters)
+            all_outliers += outliers
 
     print(f"✅ Total filtered centroids: {len(all_valid_buildings)}")
 
     all_valid_coords = [(c["lat"], c["lon"]) for c in all_valid_buildings]
     if all_provinces_at_once:
-        all_valid_clusters, _discarded_clusters, _outliers = cluster_buildings(
+        all_valid_clusters, all_discarded_clusters, all_outliers = cluster_buildings(
             all_valid_coords,
             eps_meters=EPS_VALUE,
             min_samples=MIN_BUILDINGS,
             max_diameter=DIAMETER_KM * 1000,
         )
 
-    with db.get_logging_session(name="Write clusters") as session:
-        cluster_id_counter = 1
-        for _cluster_id, cluster_points in all_valid_clusters.items():
-            clat = sum(lat for lat, _ in cluster_points) / len(cluster_points)
-            clon = sum(lon for _, lon in cluster_points) / len(cluster_points)
+    cluster_id_counter = 1
+    for _cluster_id, cluster_points in all_valid_clusters.items():
+        clat = sum(lat for lat, _ in cluster_points) / len(cluster_points)
+        clon = sum(lon for _, lon in cluster_points) / len(cluster_points)
 
-            # Skip clusters too close to existing mini-grids
-            too_close = any(
-                geodesic(
-                    (clat, clon),
-                    (mg.geography.coordinates.latitude, mg.geography.coordinates.longitude),
-                ).km
-                < MATCH_DISTANCE_KM
-                for mg in mini_grids
+        # Skip clusters too close to existing mini-grids
+        too_close = any(
+            geodesic(
+                (clat, clon),
+                (mg.geography.coordinates.latitude, mg.geography.coordinates.longitude),
+            ).km
+            < MATCH_DISTANCE_KM
+            for mg in mini_grids
+        )
+        if too_close:
+            continue
+
+        # Calculate average surface and road distance for the cluster
+        members = [i for i, pt in enumerate(all_valid_coords) if pt in cluster_points]
+        surfaces = [
+            all_valid_buildings[i]["surface"]
+            for i in members
+            if all_valid_buildings[i]["surface"] is not None
+        ]
+        avg_surface = sum(surfaces) / len(surfaces) if surfaces else 0
+        cluster = ClusterCreate(
+            geography=geopydantic.Point(**{"type": "Point", "coordinates": [clon, clat]}),
+            cluster_id=cluster_id_counter,
+            province=all_valid_buildings[members[0]]["province"],
+            num_buildings=len(members),
+            distance_to_grid_m=all_valid_buildings[members[0]]["dist_grid"],
+            avg_distance_to_road_m=sum(all_valid_buildings[i]["dist_road"] for i in members)
+            / len(members),
+            avg_surface=avg_surface,
+            eps_meters=EPS_VALUE,
+            diameter_km=DIAMETER_KM,
+            grid_distance_km=parameters.distance_from_grid_min / 1000,
+            buildings=[],
+        )
+        cluster_records.append(
+            cluster.model_dump(
+                include={
+                    "cluster_id",
+                    "latitude",
+                    "longitude",
+                    "province",
+                    "num_buildings",
+                    "distance_to_grid_m",
+                    "avg_distance_to_road_m",
+                    "avg_surface",
+                    "eps_meters",
+                    "diameter_km",
+                    "grid_distance_km",
+                }
             )
-            if too_close:
-                continue
+        )
 
-            # Calculate average surface and road distance for the cluster
-            members = [i for i, pt in enumerate(all_valid_coords) if pt in cluster_points]
-            surfaces = [
-                all_valid_buildings[i]["surface"]
-                for i in members
-                if all_valid_buildings[i]["surface"] is not None
-            ]
-            avg_surface = sum(surfaces) / len(surfaces) if surfaces else 0
-            cluster = ClusterCreate(
-                geography=geopydantic.Point(**{"type": "Point", "coordinates": [clon, clat]}),
-                cluster_id=cluster_id_counter,
-                province=all_valid_buildings[members[0]]["province"],
-                num_buildings=len(members),
-                distance_to_grid_m=all_valid_buildings[members[0]]["dist_grid"],
-                avg_distance_to_road_m=sum(all_valid_buildings[i]["dist_road"] for i in members)
-                / len(members),
-                avg_surface=avg_surface,
-                eps_meters=EPS_VALUE,
-                diameter_km=DIAMETER_KM,
-                grid_distance_km=grid_distance_km,
-                buildings=[],
+        # Add building-level information per cluster
+        for i in members:
+            building = ClusterBuilding(
+                building_id=all_valid_buildings[i]["id_shp"],
+                building_type=all_valid_buildings[i]["building_type"],
+                surface=all_valid_buildings[i]["surface"],
+                latitude=all_valid_buildings[i]["lat"],
+                longitude=all_valid_buildings[i]["lon"],
             )
-            cluster_records.append(
-                cluster.model_dump(
-                    include={
-                        "cluster_id",
-                        "latitude",
-                        "longitude",
-                        "province",
-                        "num_buildings",
-                        "distance_to_grid_m",
-                        "avg_distance_to_road_m",
-                        "avg_surface",
-                        "eps_meters",
-                        "diameter_km",
-                        "grid_distance_km",
-                    }
-                )
+            cluster.buildings.append(building)
+            building_records.append(
+                building.model_dump().update({"cluster_id": cluster_id_counter})
             )
 
-            # Add building-level information per cluster
-            for i in members:
-                building = explorations.ClusterBuilding(
-                    building_id=all_valid_buildings[i]["id_shp"],
-                    building_type=all_valid_buildings[i]["building_type"],
-                    surface=all_valid_buildings[i]["surface"],
-                    latitude=all_valid_buildings[i]["lat"],
-                    longitude=all_valid_buildings[i]["lon"],
-                )
-                cluster.buildings.append(building)
-                building_records.append(
-                    building.model_dump().update({"cluster_id": cluster_id_counter})
-                )
+        db_clusters.append(Cluster(**cluster.model_dump(), pg_geography=cluster.pg_geography))
 
-            db_cluster = explorations.Cluster(
-                **cluster.model_dump(), pg_geography=cluster.pg_geography
-            )
-            session.add(db_cluster)
-            session.flush()
-
-            cluster_id_counter += 1
-
-        session.commit()
-        print("\n📁 Clustering results saved to DB.")
+        cluster_id_counter += 1
 
     if save_to_csv:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -388,6 +455,9 @@ def generate_clusters_only(
         )
         print("\n📁 Clustering results saved to CSV.")
 
+    return db_clusters, all_discarded_clusters, all_outliers
+
 
 if __name__ == "__main__":
-    generate_clusters_only(save_to_csv=True)
+    with db.get_logging_session(name="Write clusters") as session:
+        generate_clusters(session, parameters=ClusteringParameters())

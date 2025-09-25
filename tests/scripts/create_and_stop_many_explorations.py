@@ -1,7 +1,7 @@
 import httpx
 import time
 
-import app.explorations.domain as explorations
+import app.explorations.clustering as clustering
 
 BASE_URL = "http://localhost:8000"
 
@@ -13,7 +13,7 @@ def main():
             try:
                 create_resp = client.post(
                     f"{BASE_URL}/explorations/",
-                    json=explorations.ExplorationParameters().model_dump(),
+                    json=clustering.ClusteringParameters().model_dump(),
                 )
                 time.sleep(0.5)
                 create_resp.raise_for_status()

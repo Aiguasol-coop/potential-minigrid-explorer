@@ -112,8 +112,10 @@ class BuildingBase(sqlmodel.SQLModel):
     building_type: str | None = None
     surface: float | None = None
     distance_to_grid: float | None = None
-    distance_to_road: float | None = sqlmodel.Field(default=None)
-    is_island: bool | None = sqlmodel.Field(default=None)
+    """Unit: meters."""
+    distance_to_road: float | None = None
+    """Unit: meters."""
+    is_island: bool | None = None
 
 
 class Building(BuildingBase, geography.HasPointAndMultipolygonColumn, table=True):

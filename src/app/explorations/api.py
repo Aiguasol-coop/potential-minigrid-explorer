@@ -6,16 +6,13 @@ import pydantic
 import sqlmodel
 
 import app.db.core as db
-import app.explorations.domain as explorations
-
+from app.explorations.clustering import ClusteringParameters, Cluster
 from app.explorations.domain import (
     ExplorationError,
-    ExplorationParameters,
     start_exploration,
     stop_exploration,
     Exploration,
     Simulation,
-    Cluster,
     SimulationStatus,
     ExplorationStatus,
     ProjectStatus,
@@ -103,13 +100,11 @@ router = fastapi.APIRouter()
 
 
 @router.post("/", status_code=fastapi.status.HTTP_201_CREATED)
-def start_new_exploration(db: db.Session, parameters: ExplorationParameters) -> pydantic.UUID4:
+def start_new_exploration(db: db.Session, parameters: ClusteringParameters) -> pydantic.UUID4:
     """Start a new exploration with the given parameters."""
 
     db_exploration_running = db.exec(
-        sqlmodel.select(explorations.Exploration).where(
-            explorations.Exploration.status == explorations.ExplorationStatus.RUNNING
-        )
+        sqlmodel.select(Exploration).where(Exploration.status == ExplorationStatus.RUNNING)
     ).first()
     if db_exploration_running:
         raise fastapi.HTTPException(
@@ -118,8 +113,8 @@ def start_new_exploration(db: db.Session, parameters: ExplorationParameters) -> 
             please stop it or wait until it finishes.""",
         )
 
-    db.exec(sqlmodel.delete(explorations.Cluster))  # type: ignore
-    db.exec(sqlmodel.delete(explorations.Simulation))  # type: ignore
+    db.exec(sqlmodel.delete(Cluster))  # type: ignore
+    db.exec(sqlmodel.delete(Simulation))  # type: ignore
     db.commit()
 
     # TODO: Add error handling..
