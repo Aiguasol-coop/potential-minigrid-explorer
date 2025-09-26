@@ -94,6 +94,20 @@ class ClusterBase(sqlmodel.SQLModel):
     consumption_total: float | None = None
     """Total consumption. Units: kWh/year."""
 
+    @property
+    def buildings_as_objects(self) -> list[ClusterBuilding]:
+        result: list[ClusterBuilding] = []
+        for b in self.buildings or []:
+            if isinstance(b, ClusterBuilding):  # type: ignore
+                result.append(b)
+            elif isinstance(b, dict):  # type: ignore
+                # pydantic / SQLModel parsing
+                result.append(ClusterBuilding.model_validate(b))
+            else:
+                # fallback: try model_validate which will raise if unsupported
+                result.append(ClusterBuilding.model_validate(b))
+        return result
+
 
 class Cluster(ClusterBase, geography.HasPointColumn, table=True):
     id: pydantic.UUID4 | None = sqlmodel.Field(

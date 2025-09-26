@@ -8,7 +8,7 @@ import pydantic
 import pandas as pd
 import datetime
 
-from app.db.core import get_engine
+import app.db.core as db
 from app.features.domain import Building
 import app.profiles.domain as profiles
 import app.explorations.domain as explorations
@@ -84,9 +84,7 @@ def classify_area_type(df_centroids: pd.DataFrame) -> str:
     return "periurban" if mean_dist_to_road_km < 5 else "isolated"
 
 
-def get_theoretical_distribution(
-    df_centroids: pd.DataFrame, session: sqlmodel.Session
-) -> dict[str, int]:
+def get_theoretical_distribution(df_centroids: pd.DataFrame, session: db.Session) -> dict[str, int]:
     category_distribution_obj = session.exec(
         sqlmodel.select(explorations.CategoryDistribution)
     ).first()
@@ -174,7 +172,7 @@ def adjust_distribution(
 
 def expand_hourly(
     daily_demand: dict[str, float],
-    session: sqlmodel.Session,
+    session: db.Session,
     ProfileModel: type[profiles.HouseholdHourlyProfile]
     | type[profiles.EnterpriseHourlyProfile]
     | type[profiles.PublicServiceHourlyProfile],
@@ -233,9 +231,7 @@ def build_annual_demand(
     )
 
 
-def calculate_demand(
-    cluster_centroids: list[Building], session: sqlmodel.Session
-) -> ElectricalDemand:
+def calculate_demand(cluster_centroids: list[Building], session: db.Session) -> ElectricalDemand:
     df_centroids = pd.DataFrame(
         [
             centroid.model_dump(
@@ -407,7 +403,7 @@ if __name__ == "__main__":
         Building.pg_geography_centroid, Geometry(geometry_type="POINT", srid=4326)
     )
 
-    with sqlmodel.Session(get_engine()) as session:
+    with db.get_logging_session() as session:
         cluster_centroids: list[Building] = list(
             session.exec(
                 sqlmodel.select(Building).where(geofunc.ST_Within(centroid_geom, envelope))

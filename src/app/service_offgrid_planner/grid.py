@@ -2,6 +2,7 @@ import enum
 import typing
 
 import pydantic
+import pydantic_core
 
 
 class HowAdded(str, enum.Enum):
@@ -37,22 +38,92 @@ class ConsumerDetail(str, enum.Enum):
 
 ShsOptionsType = typing.TypeVar("ShsOptionsType")
 
+ConsumerTypeType = typing.TypeVar("ConsumerTypeType")
 
-class NodeAttributes(pydantic.BaseModel, typing.Generic[ShsOptionsType]):
-    model_config = pydantic.ConfigDict(allow_inf_nan=True)
 
-    latitude: list[float]
-    longitude: list[float]
-    how_added: list[HowAdded]
-    node_type: list[NodeType]
-    consumer_type: list[ConsumerType]
-    custom_specification: list[CustomSpecification | None]
-    shs_options: list[ShsOptionsType | None]
-    consumer_detail: list[ConsumerDetail]
-    is_connected: list[bool]
-    distance_to_load_center: list[ShsOptionsType | None] | None = None
-    distribution_cost: list[ShsOptionsType | None] | None = None
-    parent: list[str] | None = None
+class NodeAttributes(pydantic.BaseModel, typing.Generic[ShsOptionsType, ConsumerTypeType]):
+    model_config = pydantic.ConfigDict(allow_inf_nan=True, ser_json_inf_nan="strings")
+
+    # We use dicts instead of lists for easy fill up using an index
+    latitude: dict[int, float] = pydantic.Field(default_factory=dict[int, float])
+    longitude: dict[int, float] = pydantic.Field(default_factory=dict[int, float])
+    how_added: dict[int, HowAdded] = pydantic.Field(default_factory=dict[int, HowAdded])
+    node_type: dict[int, NodeType] = pydantic.Field(default_factory=dict[int, NodeType])
+    consumer_type: dict[int, ConsumerTypeType] = pydantic.Field(
+        default_factory=dict[int, ConsumerTypeType]
+    )
+    custom_specification: dict[int, CustomSpecification | None] = pydantic.Field(
+        default_factory=dict[int, CustomSpecification | None]
+    )
+
+    shs_options: dict[int, ShsOptionsType | typing.Literal["NaN"]] = pydantic.Field(
+        default_factory=dict[int, ShsOptionsType | typing.Literal["NaN"]]
+    )
+    """We represent NaN's with a string instead of a float, which is a bit hacky, but Postgres JSON
+    type converts NaN to null, which makes round-trip impossible."""
+
+    consumer_detail: dict[int, ConsumerDetail] = pydantic.Field(
+        default_factory=dict[int, ConsumerDetail]
+    )
+    is_connected: dict[int, bool] = pydantic.Field(default_factory=dict[int, bool])
+
+    distance_to_load_center: dict[int, ShsOptionsType | typing.Literal["NaN"]] | None = None
+    """We represent NaN's with a string instead of a float, which is a bit hacky, but Postgres JSON
+    type converts NaN to null, which makes round-trip impossible."""
+
+    distribution_cost: dict[int, ShsOptionsType | typing.Literal["NaN"]] | None = None
+    """We represent NaN's with a string instead of a float, which is a bit hacky, but Postgres JSON
+    type converts NaN to null, which makes round-trip impossible."""
+
+    parent: dict[int, str] | None = None
+
+    @pydantic.field_serializer(
+        "latitude",
+        "longitude",
+        "how_added",
+        "node_type",
+        "consumer_type",
+        "custom_specification",
+        "shs_options",
+        "consumer_detail",
+        "is_connected",
+        "distance_to_load_center",
+        "distribution_cost",
+        "parent",
+        mode="plain",
+    )
+    def dict_to_array(self, value: dict[int, typing.Any] | None) -> list[typing.Any] | None:
+        if value is None:
+            return None
+        else:
+            return [v for _k, v in sorted(value.items())]
+
+    @pydantic.field_validator(
+        "latitude",
+        "longitude",
+        "how_added",
+        "node_type",
+        "consumer_type",
+        "custom_specification",
+        "shs_options",
+        "consumer_detail",
+        "is_connected",
+        "distance_to_load_center",
+        "distribution_cost",
+        "parent",
+        mode="before",
+    )
+    @classmethod
+    def array_to_dict(_cls, data: typing.Any) -> dict[int, typing.Any] | None:
+        if isinstance(data, str | bytes | bytearray):
+            # Assumed type for value: list[typing.Any] | None
+            value = pydantic_core.from_json(data, allow_inf_nan=True)
+
+            return {index: v for index, v in enumerate(value)} if value is not None else None
+        elif isinstance(data, list):
+            return {index: v for index, v in enumerate(data)}  # type: ignore
+        else:
+            return data
 
     @pydantic.model_validator(mode="after")
     def check_lengths_match(self) -> typing.Self:
@@ -129,7 +200,7 @@ class GridDesign(pydantic.BaseModel):
 
 
 class GridInput(pydantic.BaseModel):
-    nodes: NodeAttributes[float]
+    nodes: NodeAttributes[float, ConsumerType]
     grid_design: GridDesign
     yearly_demand: float
 
@@ -144,5 +215,26 @@ class Links(pydantic.BaseModel):
 
 
 class GridResult(pydantic.BaseModel):
-    nodes: NodeAttributes[float | None]
+    nodes: NodeAttributes[float | None, ConsumerType | None]
     links: Links
+
+
+if __name__ == "__main__":
+    nodes: NodeAttributes[float, ConsumerType] = NodeAttributes()
+    nodes.distribution_cost = {}
+    node_id = 0
+
+    nodes.latitude[node_id] = 3.14
+    nodes.longitude[node_id] = 2.7
+    nodes.how_added[node_id] = HowAdded.automatic
+    nodes.node_type[node_id] = NodeType.consumer
+    nodes.consumer_type[node_id] = ConsumerType.household
+    nodes.custom_specification[node_id] = ""  # Same value as in the example provided by RLI
+    nodes.shs_options[node_id] = 0.0  # Same value as in the example provided by RLI
+    nodes.consumer_detail[node_id] = ConsumerDetail.default
+    nodes.is_connected[node_id] = True  # Same value as in the example provided by RLI
+    nodes.distribution_cost[node_id] = "NaN"  # Same value as in the example provided by RLI
+
+    print(nodes.model_dump())
+    print("\n")
+    print(nodes.model_dump_json())

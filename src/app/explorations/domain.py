@@ -12,6 +12,8 @@ import sqlalchemy.types
 import sqlmodel
 
 import app.db.core as db
+import app.features.domain as features
+import app.service_offgrid_planner.demand as demand
 import app.service_offgrid_planner.grid as grid
 import app.service_offgrid_planner.service as offgrid_planner
 import app.service_offgrid_planner.supply as supply
@@ -162,6 +164,60 @@ class CategoryDistribution(sqlmodel.SQLModel, table=True):
     created_at: datetime.datetime = sqlmodel.Field(default_factory=datetime.datetime.now)
 
 
+def generate_grid_input(total_annual_demand: float, cluster: Cluster) -> grid.GridInput:
+    nodes: grid.NodeAttributes[float, grid.ConsumerType] = grid.NodeAttributes()
+    nodes.distribution_cost = {}
+
+    # TODO: depending on building.building_type, some special nodes could be created.
+    # TODO: building.surface is not used, atm
+    # TODO: check with RLI if it's convenient to fill up nodes.distance_to_load_center, and how.
+
+    # Add the power house node at the cluster centroid
+    nodes.latitude[0] = cluster.geography.coordinates.latitude
+    nodes.longitude[0] = cluster.geography.coordinates.longitude
+    # TODO: check with RLI if 'manual' is the appropriate value here, in their example they use
+    # 'k-means' for the power house.
+    nodes.how_added[0] = grid.HowAdded.manual
+    nodes.node_type[0] = grid.NodeType.power_house
+    nodes.consumer_type[0] = grid.ConsumerType.na
+    nodes.custom_specification[0] = (
+        grid.CustomSpecLiteral.none
+    )  # Same value as in the example provided by RLI
+    nodes.shs_options[0] = "NaN"  # Same value as in the example provided by RLI
+    nodes.consumer_detail[0] = grid.ConsumerDetail.na
+    nodes.is_connected[0] = True  # Same value as in the example provided by RLI
+    nodes.distribution_cost[0] = 0.0  # Same value as in the example provided by RLI
+
+    # Add consumer nodes
+    for node_id, building in enumerate(cluster.buildings_as_objects, start=1):
+        nodes.latitude[node_id] = building.latitude
+        nodes.longitude[node_id] = building.longitude
+        nodes.how_added[node_id] = grid.HowAdded.automatic
+        nodes.node_type[node_id] = grid.NodeType.consumer
+        nodes.consumer_type[node_id] = grid.ConsumerType.household
+        nodes.custom_specification[node_id] = ""  # Same value as in the example provided by RLI
+        nodes.shs_options[node_id] = 0.0  # Same value as in the example provided by RLI
+        nodes.consumer_detail[node_id] = grid.ConsumerDetail.default
+        nodes.is_connected[node_id] = True  # Same value as in the example provided by RLI
+        nodes.distribution_cost[node_id] = "NaN"  # Same value as in the example provided by RLI
+
+    # TODO: check the hypotesis embodied in the numeric arguments to grid_design. Current values
+    # have been taken from example file provided by RLI.
+    grid_design = grid.GridDesign(
+        distribution_cable=grid.DistributionCable(
+            lifetime=25, capex=10.0, max_length=50.0, epc=1.3016123200774503
+        ),
+        connection_cable=grid.ConnectionCable(
+            lifetime=25, capex=4.0, max_length=20.0, epc=0.5206449280309802
+        ),
+        pole=grid.Pole(lifetime=25, capex=800.0, max_n_connections=5, epc=104.12898560619605),
+        mg=grid.Mg(connection_cost=140.0, epc=18.222572481084306),
+        shs=grid.Shs(include=True, max_grid_cost=0.6),
+    )
+
+    return grid.GridInput(nodes=nodes, grid_design=grid_design, yearly_demand=total_annual_demand)
+
+
 # There are a number of threads (workers). The following table shows what threads read/write/create
 # what cells in the DB. The worker "exploration" creates all the other workers and waits for their
 # finalization. The last three workers run in (P)arallel. We try to avoid parallel writings on the
@@ -250,7 +306,7 @@ class WorkerGenerateOptimizerInputs:
                     self._result = None
                     return self._result
 
-                grid_input, supply_input = self.generate_inputs(minigrid)
+                grid_input, supply_input = self.generate_inputs(db_session, minigrid)
 
                 db_simulation = Simulation(
                     exploration_id=self._exploration_id,
@@ -265,15 +321,26 @@ class WorkerGenerateOptimizerInputs:
 
             self._result = None
 
-    def generate_inputs(self, cluster: Cluster) -> tuple[grid.GridInput, supply.SupplyInput]:
-        # TODO: codi del Michel aquí
-        #
+    def generate_inputs(
+        self, session: db.Session, cluster: Cluster
+    ) -> tuple[grid.GridInput, supply.SupplyInput]:
+        building_shp_ids = [building.building_id for building in cluster.buildings_as_objects]
+        buildings = session.exec(
+            sqlmodel.select(features.Building).where(
+                sqlmodel.col(features.Building.id_shp).in_(building_shp_ids)
+            )
+        ).all()
+
+        electric_demand = demand.calculate_demand(list(buildings), session)
+
+        grid_input = generate_grid_input(electric_demand.total_annual_demand, cluster)
+
         ### BEGIN of FAKE code
 
         import pathlib
 
-        input_json = pathlib.Path("src/tests/examples/grid_input_example.json").read_text()
-        grid_input = grid.GridInput.model_validate_json(input_json)
+        # input_json = pathlib.Path("src/tests/examples/grid_input_example.json").read_text()
+        # grid_input = grid.GridInput.model_validate_json(input_json)
         input_json = pathlib.Path("src/tests/examples/supply_input_example.json").read_text()
         supply_input = supply.SupplyInput.model_validate_json(input_json)
 
@@ -334,7 +401,7 @@ class WorkerRunOptimizer:
                 # Wait some time to not choke the optimizer
                 time.sleep(0.2)
 
-                grid_input = grid.GridInput.model_validate(json.loads(db_simulation.grid_input))
+                grid_input = grid.GridInput.model_validate_json(db_simulation.grid_input)
                 supply_input = supply.SupplyInput.model_validate(
                     json.loads(db_simulation.supply_input)
                 )
