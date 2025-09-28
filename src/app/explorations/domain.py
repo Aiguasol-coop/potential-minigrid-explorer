@@ -165,7 +165,7 @@ class CategoryDistribution(sqlmodel.SQLModel, table=True):
 
 
 def generate_grid_input(total_annual_demand: float, cluster: Cluster) -> grid.GridInput:
-    nodes: grid.NodeAttributes[float, grid.ConsumerType] = grid.NodeAttributes()
+    nodes: grid.NodeAttributes[grid.ConsumerType] = grid.NodeAttributes()
     nodes.distribution_cost = {}
 
     # TODO: depending on building.building_type, some special nodes could be created.
@@ -180,10 +180,11 @@ def generate_grid_input(total_annual_demand: float, cluster: Cluster) -> grid.Gr
     nodes.how_added[0] = grid.HowAdded.manual
     nodes.node_type[0] = grid.NodeType.power_house
     nodes.consumer_type[0] = grid.ConsumerType.na
-    nodes.custom_specification[0] = (
-        grid.CustomSpecLiteral.none
-    )  # Same value as in the example provided by RLI
-    nodes.shs_options[0] = "NaN"  # Same value as in the example provided by RLI
+    # Same value as in the example provided by RLI:
+    nodes.custom_specification[0] = grid.CustomSpecLiteral.none
+    # The RLI example uses NaN here, but this is not supported by the type in their schema:
+    # TODO: check with RLI if NaN's are treated differently from None
+    nodes.shs_options[0] = None
     nodes.consumer_detail[0] = grid.ConsumerDetail.na
     nodes.is_connected[0] = True  # Same value as in the example provided by RLI
     nodes.distribution_cost[0] = 0.0  # Same value as in the example provided by RLI
@@ -196,10 +197,12 @@ def generate_grid_input(total_annual_demand: float, cluster: Cluster) -> grid.Gr
         nodes.node_type[node_id] = grid.NodeType.consumer
         nodes.consumer_type[node_id] = grid.ConsumerType.household
         nodes.custom_specification[node_id] = ""  # Same value as in the example provided by RLI
-        nodes.shs_options[node_id] = 0.0  # Same value as in the example provided by RLI
+        # The example provided by RLI uses 0.0, but the type in the schema is int:
+        nodes.shs_options[node_id] = 0
         nodes.consumer_detail[node_id] = grid.ConsumerDetail.default
         nodes.is_connected[node_id] = True  # Same value as in the example provided by RLI
-        nodes.distribution_cost[node_id] = "NaN"  # Same value as in the example provided by RLI
+        # TODO: same problem as with the NaN for nodes.shs_options for the power house:
+        nodes.distribution_cost[node_id] = None
 
     # TODO: check the hypotesis embodied in the numeric arguments to grid_design. Current values
     # have been taken from example file provided by RLI.
@@ -267,6 +270,11 @@ class WorkerFindClusters:
                 db_session, self._parameters
             )
             for c in db_clusters:
+                # TODO: REMOVE THIS FOR PRODUCTION, this is only to skip big clusters that stall the
+                # optimizer.
+                if c.num_buildings > 250:
+                    continue
+
                 db_session.add(c)
 
             db_session.commit()

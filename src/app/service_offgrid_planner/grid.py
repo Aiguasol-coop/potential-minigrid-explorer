@@ -36,12 +36,17 @@ class ConsumerDetail(str, enum.Enum):
     na = "n.a."
 
 
-ShsOptionsType = typing.TypeVar("ShsOptionsType")
-
 ConsumerTypeType = typing.TypeVar("ConsumerTypeType")
 
 
-class NodeAttributes(pydantic.BaseModel, typing.Generic[ShsOptionsType, ConsumerTypeType]):
+# TODO: this class is prepared to generate the proper JSON using Pydantic functions, including
+# float("NaN") if needed. The problem is that when the JSON is stored in Postgres, NaNs are stripped
+# out and replaced to NULLs (Postgres doesn't support NaN in JSON). Possible solutions:
+#   - Don't use NaNs at all.
+#   - Don't store JSON in the DB, use a string (but JSON is nicer for debugging).
+#   - Commit 929987f99c819f52b7bf9e80d15bb3b3de149c35 implements a solution to allow NaNs in the DB,
+#     but it seems overcomplicated.
+class NodeAttributes(pydantic.BaseModel, typing.Generic[ConsumerTypeType]):
     model_config = pydantic.ConfigDict(allow_inf_nan=True, ser_json_inf_nan="strings")
 
     # We use dicts instead of lists for easy fill up using an index
@@ -55,26 +60,13 @@ class NodeAttributes(pydantic.BaseModel, typing.Generic[ShsOptionsType, Consumer
     custom_specification: dict[int, CustomSpecification | None] = pydantic.Field(
         default_factory=dict[int, CustomSpecification | None]
     )
-
-    shs_options: dict[int, ShsOptionsType | typing.Literal["NaN"]] = pydantic.Field(
-        default_factory=dict[int, ShsOptionsType | typing.Literal["NaN"]]
-    )
-    """We represent NaN's with a string instead of a float, which is a bit hacky, but Postgres JSON
-    type converts NaN to null, which makes round-trip impossible."""
-
+    shs_options: dict[int, int | None] = pydantic.Field(default_factory=dict[int, int | None])
     consumer_detail: dict[int, ConsumerDetail] = pydantic.Field(
         default_factory=dict[int, ConsumerDetail]
     )
     is_connected: dict[int, bool] = pydantic.Field(default_factory=dict[int, bool])
-
-    distance_to_load_center: dict[int, ShsOptionsType | typing.Literal["NaN"]] | None = None
-    """We represent NaN's with a string instead of a float, which is a bit hacky, but Postgres JSON
-    type converts NaN to null, which makes round-trip impossible."""
-
-    distribution_cost: dict[int, ShsOptionsType | typing.Literal["NaN"]] | None = None
-    """We represent NaN's with a string instead of a float, which is a bit hacky, but Postgres JSON
-    type converts NaN to null, which makes round-trip impossible."""
-
+    distance_to_load_center: dict[int, float | None] | None = None
+    distribution_cost: dict[int, float | None] | None = None
     parent: dict[int, str] | None = None
 
     @pydantic.field_serializer(
@@ -200,7 +192,7 @@ class GridDesign(pydantic.BaseModel):
 
 
 class GridInput(pydantic.BaseModel):
-    nodes: NodeAttributes[float, ConsumerType]
+    nodes: NodeAttributes[ConsumerType]
     grid_design: GridDesign
     yearly_demand: float
 
@@ -215,12 +207,12 @@ class Links(pydantic.BaseModel):
 
 
 class GridResult(pydantic.BaseModel):
-    nodes: NodeAttributes[float | None, ConsumerType | None]
+    nodes: NodeAttributes[ConsumerType | None]
     links: Links
 
 
 if __name__ == "__main__":
-    nodes: NodeAttributes[float, ConsumerType] = NodeAttributes()
+    nodes: NodeAttributes[ConsumerType] = NodeAttributes()
     nodes.distribution_cost = {}
     node_id = 0
 
@@ -229,11 +221,11 @@ if __name__ == "__main__":
     nodes.how_added[node_id] = HowAdded.automatic
     nodes.node_type[node_id] = NodeType.consumer
     nodes.consumer_type[node_id] = ConsumerType.household
-    nodes.custom_specification[node_id] = ""  # Same value as in the example provided by RLI
-    nodes.shs_options[node_id] = 0.0  # Same value as in the example provided by RLI
+    nodes.custom_specification[node_id] = ""
+    nodes.shs_options[node_id] = 0
     nodes.consumer_detail[node_id] = ConsumerDetail.default
-    nodes.is_connected[node_id] = True  # Same value as in the example provided by RLI
-    nodes.distribution_cost[node_id] = "NaN"  # Same value as in the example provided by RLI
+    nodes.is_connected[node_id] = True
+    nodes.distribution_cost[node_id] = float("NaN")
 
     print(nodes.model_dump())
     print("\n")
