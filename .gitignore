@@ -175,9 +175,12 @@ cython_debug/
 
 # Project specific
 src/app/_version.py
+src/scripts/raw_data/
 typings/
 secrets/
 database/sandbox/
 
 values.yaml
 secrets.yaml
+outputs/*
+!outputs/.GITKEEP

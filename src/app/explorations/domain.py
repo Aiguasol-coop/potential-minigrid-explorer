@@ -9,30 +9,22 @@ import typing
 import pydantic
 import sqlalchemy
 import sqlalchemy.types
-import sqlalchemy.dialects
 import sqlmodel
-import geoalchemy2
 
 import app.db.core as db
+import app.features.domain as features
+import app.service_renewables_ninja.service as rninja
+import app.service_offgrid_planner.demand as demand
 import app.service_offgrid_planner.grid as grid
 import app.service_offgrid_planner.service as offgrid_planner
 import app.service_offgrid_planner.supply as supply
-import app.shared.geography as geography
 import app.service_offgrid_planner.results as project_result
-
-
-class ExplorationParameters(sqlmodel.SQLModel):
-    consumer_count_min: int = sqlmodel.Field(gt=30, default=100, le=500)
-
-    diameter_max: float = sqlmodel.Field(gt=0.0, default=5000.0, le=10000.0)
-    """Euclidean distance (units: meter) between the two most distant consumers."""
-
-    distance_from_grid_min: float = sqlmodel.Field(ge=20000.0, default=60000.0, le=120000.0)
-    """Units: meter."""
-
-    match_distance_max: float = sqlmodel.Field(ge=100.0, default=5000.0, le=20000.0)
-    """Potential minigrids that are at this distance or less of an already existing minigrid are
-    filtered out. Units: meter."""
+from app.explorations.clustering import (
+    Cluster,
+    ClusteringParameters,
+    ClusteringParametersCreate,
+    generate_clusters,
+)
 
 
 class ExplorationStatus(str, enum.Enum):
@@ -44,7 +36,7 @@ class ExplorationStatus(str, enum.Enum):
     STOPPED = "STOPPED"
 
 
-class Exploration(ExplorationParameters, table=True):
+class Exploration(ClusteringParameters, table=True):
     id: pydantic.UUID4 = sqlmodel.Field(default_factory=uuid.uuid4, primary_key=True)
 
     status: ExplorationStatus = sqlmodel.Field(
@@ -163,54 +155,6 @@ class Simulation(sqlmodel.SQLModel, table=True):
     )
 
 
-class ClusterBuilding(sqlmodel.SQLModel):
-    building_id: int  # shp_id
-    building_type: str
-    surface: float
-    latitude: float
-    longitude: float
-
-
-class ClusterBase(sqlmodel.SQLModel):
-    cluster_id: int
-    province: str
-    num_buildings: int
-    distance_to_grid_m: float
-    avg_distance_to_road_m: float
-    avg_surface: float
-    eps_meters: float
-    diameter_km: float
-    grid_distance_km: float
-    buildings: list[ClusterBuilding] = sqlmodel.Field(
-        sa_column=sqlalchemy.Column(sqlalchemy.dialects.postgresql.JSONB, nullable=False),  # type: ignore
-        default_factory=list,
-    )
-    lcoe: float | None = None
-    """Levelized cost of energy. Units: $/kWh."""
-    capex: float | None = None
-    """Capital expenditure. Units: $US."""
-    res: float | None = sqlmodel.Field(ge=0.0, le=100.0, default=None)
-    """Renewable energy share."""
-    co2_savings: float | None = None
-    """CO2 emission savings. Units: tonne/year."""
-    consumption_total: float | None = None
-    """Total consumption. Units: kWh/year."""
-
-
-class Cluster(ClusterBase, geography.HasPointColumn, table=True):
-    id: pydantic.UUID4 | None = sqlmodel.Field(
-        default_factory=lambda: str(uuid.uuid4()), primary_key=True, index=True
-    )
-
-    pg_geography: str = sqlmodel.Field(
-        default=None,
-        sa_column=sqlalchemy.Column(
-            geoalchemy2.Geography(geometry_type="POINT", srid=4326), nullable=False
-        ),
-    )
-    create_at: datetime.datetime = sqlmodel.Field(default_factory=lambda: datetime.datetime.now())
-
-
 class ExplorationError(str, enum.Enum):
     start_clustering_failed = "The clustering algorithm could not be launched"
     clustering_algorithm_failed = "The clustering algorithm failed"
@@ -226,86 +170,158 @@ class CategoryDistribution(sqlmodel.SQLModel, table=True):
     created_at: datetime.datetime = sqlmodel.Field(default_factory=datetime.datetime.now)
 
 
-class HouseholdData(sqlmodel.SQLModel, table=True):
-    """Store household consumption data by subcategory for different area types."""
+def generate_grid_input(total_annual_demand: float, cluster: Cluster) -> grid.GridInput:
+    nodes: grid.NodeAttributes[grid.ConsumerType] = grid.NodeAttributes()
+    nodes.distribution_cost = {}
 
-    id: int = sqlmodel.Field(primary_key=True, default=None)
-    area_type: str  # 'periurban' or 'isolated'
-    subcategory: str  # 'very_low', 'low', 'medium', 'high', 'very_high'
-    kwh_per_day: float
-    distribution: float
-    created_at: datetime.datetime = sqlmodel.Field(default_factory=datetime.datetime.now)
+    # TODO: depending on building.building_type, some special nodes could be created.
+    # TODO: building.surface is not used, atm
+    # TODO: check with RLI if it's convenient to fill up nodes.distance_to_load_center, and how.
 
-    @property
-    def as_dict(self) -> dict[str, float]:
-        return {
-            "kwh_per_day": self.kwh_per_day,
-            "distribution": self.distribution,
+    # Add the power house node at the cluster centroid
+    nodes.latitude[0] = cluster.geography.coordinates.latitude
+    nodes.longitude[0] = cluster.geography.coordinates.longitude
+    # TODO: check with RLI if 'manual' is the appropriate value here, in their example they use
+    # 'k-means' for the power house.
+    nodes.how_added[0] = grid.HowAdded.manual
+    nodes.node_type[0] = grid.NodeType.power_house
+    nodes.consumer_type[0] = grid.ConsumerType.na
+    # Same value as in the example provided by RLI:
+    nodes.custom_specification[0] = grid.CustomSpecLiteral.none
+    # The RLI example uses NaN here, but this is not supported by the type in their schema:
+    # TODO: check with RLI if NaN's are treated differently from None
+    nodes.shs_options[0] = None
+    nodes.consumer_detail[0] = grid.ConsumerDetail.na
+    nodes.is_connected[0] = True  # Same value as in the example provided by RLI
+    nodes.distribution_cost[0] = 0.0  # Same value as in the example provided by RLI
+
+    # Add consumer nodes
+    for node_id, building in enumerate(cluster.buildings_as_objects, start=1):
+        nodes.latitude[node_id] = building.latitude
+        nodes.longitude[node_id] = building.longitude
+        nodes.how_added[node_id] = grid.HowAdded.automatic
+        nodes.node_type[node_id] = grid.NodeType.consumer
+        nodes.consumer_type[node_id] = grid.ConsumerType.household
+        nodes.custom_specification[node_id] = ""  # Same value as in the example provided by RLI
+        # The example provided by RLI uses 0.0, but the type in the schema is int:
+        nodes.shs_options[node_id] = 0
+        nodes.consumer_detail[node_id] = grid.ConsumerDetail.default
+        nodes.is_connected[node_id] = True  # Same value as in the example provided by RLI
+        # TODO: same problem as with the NaN for nodes.shs_options for the power house:
+        nodes.distribution_cost[node_id] = None
+
+    # TODO: check the hypotesis embodied in the numeric arguments to grid_design. Current values
+    # have been taken from example file provided by RLI.
+    grid_design = grid.GridDesign(
+        distribution_cable=grid.DistributionCable(
+            lifetime=25, capex=10.0, max_length=50.0, epc=1.3016123200774503
+        ),
+        connection_cable=grid.ConnectionCable(
+            lifetime=25, capex=4.0, max_length=20.0, epc=0.5206449280309802
+        ),
+        pole=grid.Pole(lifetime=25, capex=800.0, max_n_connections=5, epc=104.12898560619605),
+        mg=grid.Mg(connection_cost=140.0, epc=18.222572481084306),
+        shs=grid.Shs(include=True, max_grid_cost=0.6),
+    )
+
+    return grid.GridInput(nodes=nodes, grid_design=grid_design, yearly_demand=total_annual_demand)
+
+
+def generate_supply_input(
+    hourly_annual_demand: list[float], cluster: Cluster
+) -> supply.SupplyInput:
+    first_building = cluster.buildings_as_objects[0]
+
+    solar_potential = rninja.get_pv_data(lat=first_building.latitude, lon=first_building.longitude)
+
+    first_of_year = datetime.datetime(datetime.datetime.now().year, 1, 1, 0, 0, 0)
+
+    # TODO: what happens in years with 366 days?
+    index = supply.Index(start_date=first_of_year, n_days=365, freq=supply.Freq.h)
+    sequences = supply.Sequences(
+        index=index, demand=hourly_annual_demand, solar_potential=solar_potential
+    )
+
+    # TODO: check that the settings/parameters for the energy system design, taken from RLI example,
+    # are correct.
+    energy_system_design = supply.EnergySystemDesign.model_validate(
+        {
+            "battery": {
+                "settings": {"is_selected": True, "design": True},
+                "parameters": {
+                    "nominal_capacity": None,
+                    "lifetime": 7,
+                    "capex": 314.0,
+                    "opex": 24.0,
+                    "soc_min": 0.0,
+                    "soc_max": 10.0,
+                    "c_rate_in": 1.0,
+                    "c_rate_out": 1.0,
+                    "efficiency": 0.96,
+                    "epc": 94.56299561338449,
+                },
+            },
+            "diesel_genset": {
+                "settings": {"is_selected": True, "design": True},
+                "parameters": {
+                    "nominal_capacity": None,
+                    "lifetime": 8,
+                    "capex": 350.0,
+                    "opex": 25.0,
+                    "variable_cost": 0.0,
+                    "fuel_cost": 1.7,
+                    "fuel_lhv": 11.8,
+                    "min_load": 20.0,
+                    "max_load": 100.0,
+                    "min_efficiency": 0.22,
+                    "max_efficiency": 0.3,
+                    "epc": 98.3654595406082,
+                },
+            },
+            "inverter": {
+                "settings": {"is_selected": True, "design": True},
+                "parameters": {
+                    "nominal_capacity": None,
+                    "lifetime": 25,
+                    "capex": 415.0,
+                    "opex": 9.0,
+                    "efficiency": 0.95,
+                    "epc": 63.01691128321419,
+                },
+            },
+            "pv": {
+                "settings": {"is_selected": True, "design": True},
+                "parameters": {
+                    "nominal_capacity": 441.0,
+                    "lifetime": 25,
+                    "capex": 441.0,
+                    "opex": 8.8,
+                    "epc": 66.20110331541557,
+                },
+            },
+            "rectifier": {
+                "settings": {"is_selected": True, "design": True},
+                "parameters": {
+                    "nominal_capacity": 5.0,
+                    "lifetime": 25,
+                    "capex": 415.0,
+                    "opex": 0.0,
+                    "efficiency": 0.95,
+                    "epc": 54.0169112832142,
+                },
+            },
+            "shortage": {
+                "settings": {"is_selected": True},
+                "parameters": {
+                    "max_shortage_total": 10.0,
+                    "max_shortage_timestep": 20.0,
+                    "shortage_penalty_cost": 0.8,
+                },
+            },
         }
+    )
 
-
-class EnterpriseData(sqlmodel.SQLModel, table=True):
-    """Store enterprise consumption data by subcategory for different area types."""
-
-    id: int = sqlmodel.Field(primary_key=True, default=None)
-    area_type: str  # 'periurban' or 'isolated'
-    subcategory: str  # Food_Groceries, Retail_Kiosk, etc.
-    kwh_per_day: float
-    distribution: float
-    created_at: datetime.datetime = sqlmodel.Field(default_factory=datetime.datetime.now)
-
-    @property
-    def as_dict(self) -> dict[str, float]:
-        return {
-            "kwh_per_day": self.kwh_per_day,
-            "distribution": self.distribution,
-        }
-
-
-class PublicServiceData(sqlmodel.SQLModel, table=True):
-    """Store public service consumption data by subcategory for different area types."""
-
-    id: int = sqlmodel.Field(primary_key=True, default=None)
-    area_type: str  # 'periurban' or 'isolated'
-    subcategory: str  # Health_Health Centre, Health_Clinic, etc.
-    kwh_per_day: float
-    distribution: float
-    created_at: datetime.datetime = sqlmodel.Field(default_factory=datetime.datetime.now)
-
-    @property
-    def as_dict(self) -> dict[str, float]:
-        return {
-            "kwh_per_day": self.kwh_per_day,
-            "distribution": self.distribution,
-        }
-
-
-class HouseholdHourlyProfile(sqlmodel.SQLModel, table=True):
-    """Store household hourly consumption profiles."""
-
-    id: int = sqlmodel.Field(primary_key=True, default=None)
-    area_type: str  # 'periurban' or 'isolated'
-    subcategory: str  # 'very_low', 'low', 'medium', 'high', 'very_high'
-    hourly_profile: dict[str, float] = sqlmodel.Field(sa_column=sqlalchemy.Column(sqlalchemy.JSON))
-    created_at: datetime.datetime = sqlmodel.Field(default_factory=datetime.datetime.now)
-
-
-class EnterpriseHourlyProfile(sqlmodel.SQLModel, table=True):
-    """Store enterprise hourly consumption profiles."""
-
-    id: int = sqlmodel.Field(primary_key=True, default=None)
-    subcategory: str  # Food_Groceries, Retail_Kiosk, etc.
-    hourly_profile: dict[str, float] = sqlmodel.Field(sa_column=sqlalchemy.Column(sqlalchemy.JSON))
-    created_at: datetime.datetime = sqlmodel.Field(default_factory=datetime.datetime.now)
-
-
-class PublicServiceHourlyProfile(sqlmodel.SQLModel, table=True):
-    """Store public service hourly consumption profiles."""
-
-    id: int = sqlmodel.Field(primary_key=True, default=None)
-    subcategory: str  # Health_Health Centre, Health_Clinic, etc.
-    hourly_profile: dict[str, float] = sqlmodel.Field(sa_column=sqlalchemy.Column(sqlalchemy.JSON))
-    created_at: datetime.datetime = sqlmodel.Field(default_factory=datetime.datetime.now)
+    return supply.SupplyInput(sequences=sequences, energy_system_design=energy_system_design)
 
 
 # There are a number of threads (workers). The following table shows what threads read/write/create
@@ -337,7 +353,11 @@ class PublicServiceHourlyProfile(sqlmodel.SQLModel, table=True):
 
 
 class WorkerFindClusters:
-    def __init__(self, parameters: ExplorationParameters, exploration_id: pydantic.UUID4):
+    def __init__(
+        self,
+        parameters: ClusteringParametersCreate,
+        exploration_id: pydantic.UUID4,
+    ):
         self._parameters = parameters
         self._exploration_id = exploration_id
         self._result: None | ExplorationError = None
@@ -349,42 +369,31 @@ class WorkerFindClusters:
 
             assert db_exploration
 
-            #  TODO: aquí el codi del Michel (DBSCAN)
-            #
-            ### BEGIN of FAKE code
-
-            FAKE_CLUSTERS_COUNT = 50
-            FAKE_MINIGRIDS_COUNT = 20
-
-            for i in range(FAKE_MINIGRIDS_COUNT):
-                if self._stop_event.is_set():
-                    self._result = None
-                    return self._result
-
-                # We store in the DB only those clusters selected as potential minigrids
-                c = Cluster(
-                    cluster_id=i,
-                    province="A_province",
-                    num_buildings=30,
-                    distance_to_grid_m=1200000,
-                    avg_distance_to_road_m=150000,
-                    avg_surface=40.5,
-                    eps_meters=20,
-                    diameter_km=0.3,
-                    grid_distance_km=1200,
-                    buildings=[],
-                    pg_geography="POINT(2.0 41.0)",
-                )
-                db_session.add(c)
-                db_session.commit()
-                db_session.refresh(c)
-
-            db_exploration.clusters_found = FAKE_CLUSTERS_COUNT
-            db_exploration.minigrids_found = FAKE_MINIGRIDS_COUNT
-            db_session.add(db_exploration)
+            # Truncate table Cluster
+            db_session.execute(sqlmodel.delete(Cluster))
             db_session.commit()
 
-            ### END of FAKE code
+            db_clusters, discarded_clusters, outliers = generate_clusters(
+                db_session, self._parameters
+            )
+            for c in db_clusters:
+                if (
+                    self._parameters.debug_consumer_count_max
+                    and c.num_buildings > self._parameters.debug_consumer_count_max
+                ):
+                    continue
+
+                db_session.add(c)
+
+            db_session.commit()
+            print("\n📁 Clustering results saved to DB.")
+
+            db_exploration.clusters_found = (
+                len(db_clusters) + len(discarded_clusters) + len(outliers)
+            )
+            db_exploration.minigrids_found = len(db_clusters)
+            db_session.add(db_exploration)
+            db_session.commit()
 
     def stop(self):
         self._stop_event.set()
@@ -413,7 +422,7 @@ class WorkerGenerateOptimizerInputs:
                     self._result = None
                     return self._result
 
-                grid_input, supply_input = self.generate_inputs(minigrid)
+                grid_input, supply_input = self.generate_inputs(db_session, minigrid)
 
                 db_simulation = Simulation(
                     exploration_id=self._exploration_id,
@@ -428,19 +437,23 @@ class WorkerGenerateOptimizerInputs:
 
             self._result = None
 
-    def generate_inputs(self, cluster: Cluster) -> tuple[grid.GridInput, supply.SupplyInput]:
-        # TODO: codi del Michel aquí
-        #
-        ### BEGIN of FAKE code
+    def generate_inputs(
+        self, session: db.Session, cluster: Cluster
+    ) -> tuple[grid.GridInput, supply.SupplyInput]:
+        building_shp_ids = [building.building_id for building in cluster.buildings_as_objects]
+        buildings = session.exec(
+            sqlmodel.select(features.Building).where(
+                sqlmodel.col(features.Building.id_shp).in_(building_shp_ids)
+            )
+        ).all()
 
-        import pathlib
+        electric_demand = demand.calculate_demand(list(buildings), session)
 
-        input_json = pathlib.Path("src/tests/examples/grid_input_example.json").read_text()
-        grid_input = grid.GridInput.model_validate_json(input_json)
-        input_json = pathlib.Path("src/tests/examples/supply_input_example.json").read_text()
-        supply_input = supply.SupplyInput.model_validate_json(input_json)
+        grid_input = generate_grid_input(electric_demand.total_annual_demand, cluster)
 
-        ### END of FAKE code
+        supply_input = generate_supply_input(
+            list(electric_demand.hourly_annual_demand.values()), cluster
+        )
 
         return (grid_input, supply_input)
 
@@ -497,10 +510,8 @@ class WorkerRunOptimizer:
                 # Wait some time to not choke the optimizer
                 time.sleep(0.2)
 
-                grid_input = grid.GridInput.model_validate(json.loads(db_simulation.grid_input))
-                supply_input = supply.SupplyInput.model_validate(
-                    json.loads(db_simulation.supply_input)
-                )
+                grid_input = grid.GridInput.model_validate_json(db_simulation.grid_input)
+                supply_input = supply.SupplyInput.model_validate_json(db_simulation.supply_input)
                 checker_grid = offgrid_planner.optimize_grid(grid_input)
                 checker_supply = offgrid_planner.optimize_supply(supply_input)
 
@@ -544,11 +555,11 @@ class WorkerRunOptimizer:
                     if not minigrid_id:
                         db_simulation = db_session.exec(stmt_pending_simulations).first()
                         if db_simulation:
-                            grid_input = grid.GridInput.model_validate(
-                                json.loads(db_simulation.grid_input)
+                            grid_input = grid.GridInput.model_validate_json(
+                                db_simulation.grid_input
                             )
-                            supply_input = supply.SupplyInput.model_validate(
-                                json.loads(db_simulation.supply_input)
+                            supply_input = supply.SupplyInput.model_validate_json(
+                                db_simulation.supply_input
                             )
 
                             # Wait some time to not choke the optimizer
@@ -801,7 +812,7 @@ def remove_worker(name: str):
         active_workers.pop(name, None)
 
 
-def worker_exploration(parameters: ExplorationParameters, exploration_id: pydantic.UUID4):
+def worker_exploration(parameters: ClusteringParametersCreate, exploration_id: pydantic.UUID4):
     """Worker to be used as the target of a thread. It creates 4 sub-threads and waits until all of
     them finish."""
 
@@ -853,7 +864,7 @@ def worker_exploration(parameters: ExplorationParameters, exploration_id: pydant
 
 
 def start_exploration(
-    db: db.Session, parameters: ExplorationParameters
+    db: db.Session, parameters: ClusteringParameters
 ) -> pydantic.UUID4 | ExplorationError:
     db_exploration = Exploration.model_validate(parameters)
     db_exploration.status = ExplorationStatus.RUNNING
@@ -917,7 +928,7 @@ def stop_exploration(db: db.Session, exploration_id: pydantic.UUID4):
 if __name__ == "__main__":
     import app.db.core as db
 
-    parameters = ExplorationParameters()
+    parameters = ClusteringParameters()
 
     with sqlmodel.Session(db.get_engine()) as session:
         start_exploration(session, parameters)
