@@ -45,10 +45,13 @@ FROM python:3.13-slim-bookworm AS runner
 # Install:
 # - libpq, needed for psycopg
 # - gnupg, needed for installing psql
+# - libexpat1, needed for fiona
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     gnupg \
     netcat-openbsd \
+    libexpat1 \
+    libexpat1-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Install up-to-date version of psql
