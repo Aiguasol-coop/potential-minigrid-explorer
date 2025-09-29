@@ -13,6 +13,7 @@ import sqlmodel
 
 import app.db.core as db
 import app.features.domain as features
+import app.service_renewables_ninja.service as rninja
 import app.service_offgrid_planner.demand as demand
 import app.service_offgrid_planner.grid as grid
 import app.service_offgrid_planner.service as offgrid_planner
@@ -221,6 +222,103 @@ def generate_grid_input(total_annual_demand: float, cluster: Cluster) -> grid.Gr
     return grid.GridInput(nodes=nodes, grid_design=grid_design, yearly_demand=total_annual_demand)
 
 
+def generate_supply_input(
+    hourly_annual_demand: list[float], cluster: Cluster
+) -> supply.SupplyInput:
+    first_building = cluster.buildings_as_objects[0]
+
+    solar_potential = rninja.get_pv_data(lat=first_building.latitude, lon=first_building.longitude)
+
+    first_of_year = datetime.datetime(datetime.datetime.now().year, 1, 1, 0, 0, 0)
+
+    # TODO: what happens in years with 366 days?
+    index = supply.Index(start_date=first_of_year, n_days=365, freq=supply.Freq.h)
+    sequences = supply.Sequences(
+        index=index, demand=hourly_annual_demand, solar_potential=solar_potential
+    )
+
+    # TODO: check that the settings/parameters for the energy system design, taken from RLI example,
+    # are correct.
+    energy_system_design = supply.EnergySystemDesign.model_validate(
+        {
+            "battery": {
+                "settings": {"is_selected": True, "design": True},
+                "parameters": {
+                    "nominal_capacity": None,
+                    "lifetime": 7,
+                    "capex": 314.0,
+                    "opex": 24.0,
+                    "soc_min": 0.0,
+                    "soc_max": 10.0,
+                    "c_rate_in": 1.0,
+                    "c_rate_out": 1.0,
+                    "efficiency": 0.96,
+                    "epc": 94.56299561338449,
+                },
+            },
+            "diesel_genset": {
+                "settings": {"is_selected": True, "design": True},
+                "parameters": {
+                    "nominal_capacity": None,
+                    "lifetime": 8,
+                    "capex": 350.0,
+                    "opex": 25.0,
+                    "variable_cost": 0.0,
+                    "fuel_cost": 1.7,
+                    "fuel_lhv": 11.8,
+                    "min_load": 20.0,
+                    "max_load": 100.0,
+                    "min_efficiency": 0.22,
+                    "max_efficiency": 0.3,
+                    "epc": 98.3654595406082,
+                },
+            },
+            "inverter": {
+                "settings": {"is_selected": True, "design": True},
+                "parameters": {
+                    "nominal_capacity": None,
+                    "lifetime": 25,
+                    "capex": 415.0,
+                    "opex": 9.0,
+                    "efficiency": 0.95,
+                    "epc": 63.01691128321419,
+                },
+            },
+            "pv": {
+                "settings": {"is_selected": True, "design": True},
+                "parameters": {
+                    "nominal_capacity": 441.0,
+                    "lifetime": 25,
+                    "capex": 441.0,
+                    "opex": 8.8,
+                    "epc": 66.20110331541557,
+                },
+            },
+            "rectifier": {
+                "settings": {"is_selected": True, "design": True},
+                "parameters": {
+                    "nominal_capacity": 5.0,
+                    "lifetime": 25,
+                    "capex": 415.0,
+                    "opex": 0.0,
+                    "efficiency": 0.95,
+                    "epc": 54.0169112832142,
+                },
+            },
+            "shortage": {
+                "settings": {"is_selected": True},
+                "parameters": {
+                    "max_shortage_total": 10.0,
+                    "max_shortage_timestep": 20.0,
+                    "shortage_penalty_cost": 0.8,
+                },
+            },
+        }
+    )
+
+    return supply.SupplyInput(sequences=sequences, energy_system_design=energy_system_design)
+
+
 # There are a number of threads (workers). The following table shows what threads read/write/create
 # what cells in the DB. The worker "exploration" creates all the other workers and waits for their
 # finalization. The last three workers run in (P)arallel. We try to avoid parallel writings on the
@@ -343,16 +441,9 @@ class WorkerGenerateOptimizerInputs:
 
         grid_input = generate_grid_input(electric_demand.total_annual_demand, cluster)
 
-        ### BEGIN of FAKE code
-
-        import pathlib
-
-        # input_json = pathlib.Path("src/tests/examples/grid_input_example.json").read_text()
-        # grid_input = grid.GridInput.model_validate_json(input_json)
-        input_json = pathlib.Path("src/tests/examples/supply_input_example.json").read_text()
-        supply_input = supply.SupplyInput.model_validate_json(input_json)
-
-        ### END of FAKE code
+        supply_input = generate_supply_input(
+            list(electric_demand.hourly_annual_demand.values()), cluster
+        )
 
         return (grid_input, supply_input)
 
@@ -410,9 +501,7 @@ class WorkerRunOptimizer:
                 time.sleep(0.2)
 
                 grid_input = grid.GridInput.model_validate_json(db_simulation.grid_input)
-                supply_input = supply.SupplyInput.model_validate(
-                    json.loads(db_simulation.supply_input)
-                )
+                supply_input = supply.SupplyInput.model_validate_json(db_simulation.supply_input)
                 checker_grid = offgrid_planner.optimize_grid(grid_input)
                 checker_supply = offgrid_planner.optimize_supply(supply_input)
 
@@ -456,11 +545,11 @@ class WorkerRunOptimizer:
                     if not minigrid_id:
                         db_simulation = db_session.exec(stmt_pending_simulations).first()
                         if db_simulation:
-                            grid_input = grid.GridInput.model_validate(
-                                json.loads(db_simulation.grid_input)
+                            grid_input = grid.GridInput.model_validate_json(
+                                db_simulation.grid_input
                             )
-                            supply_input = supply.SupplyInput.model_validate(
-                                json.loads(db_simulation.supply_input)
+                            supply_input = supply.SupplyInput.model_validate_json(
+                                db_simulation.supply_input
                             )
 
                             # Wait some time to not choke the optimizer
