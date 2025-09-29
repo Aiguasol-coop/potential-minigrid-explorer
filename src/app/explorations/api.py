@@ -6,7 +6,7 @@ import pydantic
 import sqlmodel
 
 import app.db.core as db
-from app.explorations.clustering import ClusteringParameters, Cluster
+from app.explorations.clustering import ClusteringParametersCreate, Cluster
 from app.explorations.domain import (
     ExplorationError,
     start_exploration,
@@ -100,7 +100,7 @@ router = fastapi.APIRouter()
 
 
 @router.post("/", status_code=fastapi.status.HTTP_201_CREATED)
-def start_new_exploration(db: db.Session, parameters: ClusteringParameters) -> pydantic.UUID4:
+def start_new_exploration(db: db.Session, parameters: ClusteringParametersCreate) -> pydantic.UUID4:
     """Start a new exploration with the given parameters."""
 
     db_exploration_running = db.exec(

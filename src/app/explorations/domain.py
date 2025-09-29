@@ -19,7 +19,12 @@ import app.service_offgrid_planner.grid as grid
 import app.service_offgrid_planner.service as offgrid_planner
 import app.service_offgrid_planner.supply as supply
 import app.service_offgrid_planner.results as project_result
-from app.explorations.clustering import Cluster, ClusteringParameters, generate_clusters
+from app.explorations.clustering import (
+    Cluster,
+    ClusteringParameters,
+    ClusteringParametersCreate,
+    generate_clusters,
+)
 
 
 class ExplorationStatus(str, enum.Enum):
@@ -348,7 +353,11 @@ def generate_supply_input(
 
 
 class WorkerFindClusters:
-    def __init__(self, parameters: ClusteringParameters, exploration_id: pydantic.UUID4):
+    def __init__(
+        self,
+        parameters: ClusteringParametersCreate,
+        exploration_id: pydantic.UUID4,
+    ):
         self._parameters = parameters
         self._exploration_id = exploration_id
         self._result: None | ExplorationError = None
@@ -368,9 +377,10 @@ class WorkerFindClusters:
                 db_session, self._parameters
             )
             for c in db_clusters:
-                # TODO: REMOVE THIS FOR PRODUCTION, this is only to skip big clusters that stall the
-                # optimizer.
-                if c.num_buildings > 250:
+                if (
+                    self._parameters.debug_consumer_count_max
+                    and c.num_buildings > self._parameters.debug_consumer_count_max
+                ):
                     continue
 
                 db_session.add(c)
@@ -802,7 +812,7 @@ def remove_worker(name: str):
         active_workers.pop(name, None)
 
 
-def worker_exploration(parameters: ClusteringParameters, exploration_id: pydantic.UUID4):
+def worker_exploration(parameters: ClusteringParametersCreate, exploration_id: pydantic.UUID4):
     """Worker to be used as the target of a thread. It creates 4 sub-threads and waits until all of
     them finish."""
 

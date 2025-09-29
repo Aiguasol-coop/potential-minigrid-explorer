@@ -28,10 +28,6 @@ from app.explorations.plotting import plot_buildings_and_grid_lines_with_distanc
 
 # PARAMETERS
 EPS_VALUE = 300
-DIAMETER_KM = 5
-GRID_DISTANCES = [20, 40, 60, 80, 100, 120]  # Only 60 will be used in this script
-MIN_BUILDINGS = 100
-MATCH_DISTANCE_KM = 5
 PROVINCES = [  # Adjacent number is the building count
     # "Cabo Delga",  # 449720
     # "Gaza",  # 83771
@@ -59,6 +55,12 @@ class ClusteringParameters(sqlmodel.SQLModel):
     match_distance_max: float = sqlmodel.Field(ge=100.0, default=5000.0, le=20000.0)
     """Potential minigrids that are at this distance or less of an already existing minigrid are
     filtered out. Units: meter."""
+
+
+class ClusteringParametersCreate(ClusteringParameters):
+    debug_consumer_count_max: int | None = None
+    """Only for debugging/testing, you can use this parameter to avoid calculating clusters that are
+    big and take too long."""
 
 
 class ClusterBuilding(sqlmodel.SQLModel):
@@ -285,8 +287,8 @@ def get_existing_mini_grids(session: db.Session) -> Sequence[features.MiniGrid]:
     return mini_grids
 
 
-# TODO: return distance to relevant roads (some tests may be needed to select the appropiate road
-# type)
+# TODO: return distance to relevant roads (some tests may be needed to select the appropriate road
+# type: primary, trunk, etc.)
 
 # Number of road segments by type:
 # path	170685
@@ -359,8 +361,8 @@ def generate_clusters(
             valid_clusters, discarded_clusters, outliers = cluster_buildings(
                 [(c["lat"], c["lon"]) for c in valid_buildings],
                 eps_meters=EPS_VALUE,
-                min_samples=MIN_BUILDINGS,
-                max_diameter=DIAMETER_KM * 1000,
+                min_samples=parameters.consumer_count_min,
+                max_diameter=parameters.diameter_max,
             )
             all_valid_clusters.update(
                 {i + num_valid_clusters: c for i, c in valid_clusters.items()}
@@ -379,8 +381,8 @@ def generate_clusters(
         all_valid_clusters, all_discarded_clusters, all_outliers = cluster_buildings(
             all_valid_coords,
             eps_meters=EPS_VALUE,
-            min_samples=MIN_BUILDINGS,
-            max_diameter=DIAMETER_KM * 1000,
+            min_samples=parameters.consumer_count_min,
+            max_diameter=parameters.diameter_max,
         )
 
     cluster_id_counter = 1
@@ -394,7 +396,7 @@ def generate_clusters(
                 (clat, clon),
                 (mg.geography.coordinates.latitude, mg.geography.coordinates.longitude),
             ).km
-            < MATCH_DISTANCE_KM
+            < (parameters.match_distance_max / 1000)
             for mg in mini_grids
         )
         if too_close:
@@ -418,7 +420,7 @@ def generate_clusters(
             / len(members),
             avg_surface=avg_surface,
             eps_meters=EPS_VALUE,
-            diameter_km=DIAMETER_KM,
+            diameter_km=parameters.diameter_max / 1000,
             grid_distance_km=parameters.distance_from_grid_min / 1000,
             buildings=[],
         )
