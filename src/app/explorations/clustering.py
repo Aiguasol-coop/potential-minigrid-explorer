@@ -30,7 +30,7 @@ from app.explorations.plotting import plot_buildings_and_grid_lines_with_distanc
 EPS_VALUE = 300
 PROVINCES = [  # Adjacent number is the building count
     # "Cabo Delga",  # 449720
-    # "Gaza",  # 83771
+    "Gaza",  # 83771
     "Inhambane",  # 99401
     # "Manica",  # 97937
     # "Maputo",  # 9648
@@ -44,12 +44,12 @@ PROVINCES = [  # Adjacent number is the building count
 
 
 class ClusteringParameters(sqlmodel.SQLModel):
-    consumer_count_min: int = sqlmodel.Field(gt=30, default=100, le=500)
+    consumer_count_min: int = sqlmodel.Field(gt=30, default=60, le=500)
 
-    diameter_max: float = sqlmodel.Field(gt=0.0, default=5000.0, le=10000.0)
+    diameter_max: float = sqlmodel.Field(gt=0.0, default=1000.0, le=10000.0)
     """Euclidean distance (units: meter) between the two most distant consumers."""
 
-    distance_from_grid_min: float = sqlmodel.Field(ge=20000.0, default=60000.0, le=120000.0)
+    distance_from_grid_min: float = sqlmodel.Field(ge=20000.0, default=70000.0, le=120000.0)
     """Units: meter."""
 
     match_distance_max: float = sqlmodel.Field(ge=100.0, default=5000.0, le=20000.0)

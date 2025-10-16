@@ -389,7 +389,7 @@ class WorkerFindClusters:
             print("\n📁 Clustering results saved to DB.")
 
             db_exploration.clusters_found = (
-                len(db_clusters) + len(discarded_clusters) + len(outliers)
+                len(db_clusters) + len(discarded_clusters)  # + len(outliers)
             )
             db_exploration.minigrids_found = len(db_clusters)
             db_session.add(db_exploration)
@@ -477,6 +477,10 @@ class WorkerRunOptimizer:
             db_exploration = db_session.get(Exploration, self._exploration_id)
 
             assert db_exploration
+
+            if not db_exploration.minigrids_found:
+                print("No minigrids found in exploration, nothing to optimize.")
+                return
 
             NUM_SLOTS: int = 8
             slots: list[
@@ -689,7 +693,10 @@ class WorkerProcessSimulationResults:
             db_exploration = db_session.get(Exploration, self._exploration_id)
 
             assert db_exploration
-            assert db_exploration.minigrids_found
+            # assert db_exploration.minigrids_found
+            if not db_exploration.minigrids_found:
+                print("No minigrids found in exploration, nothing to process.")
+                return
 
             stmt_ended_simulations_count = sqlmodel.select(sqlalchemy.func.count()).where(
                 Simulation.exploration_id == self._exploration_id,

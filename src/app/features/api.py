@@ -98,7 +98,11 @@ def get_buildings_by_bbox(
 @router.get("/roads")
 def get_country_roads(
     db: db.Session,
-    bbox: str | None = fastapi.Query(default=None),
+    bbox: str | None = fastapi.Query(
+        default=None,
+        description="Bounding box in the format: min_lat,min_lon,max_lat,max_lon",
+        example="40.372135,-13.687544,40.468093,-13.630163",
+    ),
 ) -> list[RoadsResponse]:
     query = sqlmodel.select(Road)
 
