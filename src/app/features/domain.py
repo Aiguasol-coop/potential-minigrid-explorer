@@ -4,7 +4,7 @@ import enum
 import geoalchemy2
 import sqlalchemy
 import sqlmodel
-import uuid6
+import uuid
 
 import app.shared.geography as geography
 
@@ -25,7 +25,7 @@ class Road(RoadBase, geography.HasLinestringColumn, table=True):
     __tablename__ = "roads"  # type: ignore
 
     id: str | None = sqlmodel.Field(
-        default_factory=lambda: str(uuid6.uuid7()), primary_key=True, index=True
+        default_factory=lambda: str(uuid.uuid4()), primary_key=True, index=True
     )
 
     id_shp: float | None = None
@@ -51,7 +51,7 @@ class GridDistributionLine(GridDistributionLineBase, geography.HasLinestringColu
     __tablename__ = "grid_distribution_lines"  # type: ignore
 
     id: str | None = sqlmodel.Field(
-        default_factory=lambda: str(uuid6.uuid7()), primary_key=True, index=True
+        default_factory=lambda: str(uuid.uuid4()), primary_key=True, index=True
     )
 
     id_shp: float | None = None
@@ -92,7 +92,7 @@ class MiniGrid(MiniGridBase, geography.HasPointColumn, table=True):
     __tablename__ = "mini_grids"  # type: ignore
 
     id: str | None = sqlmodel.Field(
-        default_factory=lambda: str(uuid6.uuid7()), primary_key=True, index=True
+        default_factory=lambda: str(uuid.uuid4()), primary_key=True, index=True
     )
 
     pg_geography: str = sqlmodel.Field(
@@ -122,7 +122,7 @@ class Building(BuildingBase, geography.HasPointAndMultipolygonColumn, table=True
     __tablename__ = "buildings"  # type: ignore
 
     id: str | None = sqlmodel.Field(
-        default_factory=lambda: str(uuid6.uuid7()), primary_key=True, index=True
+        default_factory=lambda: str(uuid.uuid4()), primary_key=True, index=True
     )
     id_shp: int | None = sqlmodel.Field(
         default=None, sa_column=sqlalchemy.Column(sqlalchemy.BigInteger)

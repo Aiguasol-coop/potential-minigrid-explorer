@@ -10,6 +10,8 @@ import geojson_pydantic as geopydantic
 import shapely
 import sqlalchemy
 from sqlalchemy.sql.elements import ColumnElement
+import math
+import enum
 
 import app.db.core as db
 import app.service_offgrid_planner.demand as demand
@@ -48,7 +50,7 @@ class GridDistributionLineResponse(GridDistributionLineBase, geography.HasLinest
 
 
 class ExistingMinigrid(sqlmodel.SQLModel):
-    id: pydantic.UUID7
+    id: pydantic.UUID4
     status: MinigridStatus
     name: str | None = None
     operator: str | None = None
@@ -64,15 +66,43 @@ class ExistingMinigrid(sqlmodel.SQLModel):
 ####################################################################################################
 
 # TODO: Import full centroids layer + recalculate road distance with new shp file.. + review
+
 # existing minigrids layer.
 router = fastapi.APIRouter()
 
 
-@router.get("/buildings")
+class BadRequestBBOX(str, enum.Enum):
+    bbox_size = "The selected area must not exceed approximately 10 km × 10 km."
+
+
+@router.get("/buildings", responses={400: {"model": BadRequestBBOX}})
 def get_buildings_by_bbox(
-    db: db.Session, bbox: bounding_box.BoundingBox = fastapi.Query()
+    db: db.Session,
+    bbox: bounding_box.BoundingBox = fastapi.Query(
+        description=(
+            "Bounding box in the format: min_lat, min_lon, max_lat, max_lon. "
+            "The selected area must not exceed approximately 10 km × 10 km."
+        ),
+        example="-13.675544, 40.382135,-13.630163, 40.468093",
+    ),
 ) -> list[BuildingResponse]:
-    min_lon, min_lat, max_lon, max_lat = bbox.parts
+    min_lat, min_lon, max_lat, max_lon = bbox.parts
+
+    # --- Compute approximate size of the bbox in kilometers ---
+    # Longitude distance depends on latitude (cos(lat))
+    avg_lat = (min_lat + max_lat) / 2.0
+    lon_distance_km = (max_lon - min_lon) * 111.32 * math.cos(math.radians(avg_lat))
+    lat_distance_km = (max_lat - min_lat) * 110.57
+
+    if lon_distance_km > 10 or lat_distance_km > 10:
+        raise fastapi.HTTPException(
+            status_code=400,
+            detail=(
+                f"BBox too large: {lon_distance_km:.2f} km × {lat_distance_km:.2f} km. "
+                f"{BadRequestBBOX.bbox_size.value}"
+            ),
+        )
+
     envelope = geofunc.ST_MakeEnvelope(min_lon, min_lat, max_lon, max_lat, 4326)
     centroid_geom: ColumnElement[Any] = sqlalchemy.cast(
         Building.pg_geography_centroid, Geometry(geometry_type="POINT", srid=4326)
@@ -81,11 +111,13 @@ def get_buildings_by_bbox(
     cluster_centroids: list[Building] = list(
         db.exec(sqlmodel.select(Building).where(geofunc.ST_Within(centroid_geom, envelope))).all()
     )
+
     buildings: list[BuildingResponse] = []
     for building in cluster_centroids:
         building.building_type = (
             demand.get_keys_from_value(
-                demand.CLASS_CONVERSION, f"{building.building_type}_{building.category.lower()}"
+                demand.CLASS_CONVERSION,
+                f"{building.building_type}_{building.category.lower()}",
             )
             if building.building_type != "other" and building.category
             else "household"
@@ -100,14 +132,18 @@ def get_country_roads(
     db: db.Session,
     bbox: str | None = fastapi.Query(
         default=None,
-        description="Bounding box in the format: min_lat,min_lon,max_lat,max_lon",
-        example="40.372135,-13.687544,40.468093,-13.630163",
+        description="Optional bounding box to filter roads within a specific geographic area, "
+        "in the format: min_lat, min_lon, max_lat, max_lon. "
+        "Example: '-13.675544, 40.382135,-13.630163, 40.468093'. "
+        "If provided, all road types within this area are returned. "
+        "If omitted, only the main country roads are returned — ",
+        example="-13.675544, 40.382135,-13.630163, 40.468093",
     ),
 ) -> list[RoadsResponse]:
     query = sqlmodel.select(Road)
 
     if bbox:
-        min_lon, min_lat, max_lon, max_lat = bounding_box.BoundingBox(bbox=bbox).parts
+        min_lat, min_lon, max_lat, max_lon = bounding_box.BoundingBox(bbox=bbox).parts
         envelope = sqlalchemy.func.ST_MakeEnvelope(min_lon, min_lat, max_lon, max_lat, 4326)
         query = query.where(sqlalchemy.func.ST_Intersects(Road.pg_geography, envelope))
     else:
@@ -116,8 +152,13 @@ def get_country_roads(
                 [
                     "motorway",
                     "trunk",
-                    # "primary",
-                    # "secondary",
+                    "trunk_link",
+                    "primary",
+                    "primary_link",
+                    "secondary",
+                    "secondary_link",
+                    "tertiary",
+                    "tertiary_link",
                 ]
             )
         )
