@@ -7,6 +7,8 @@ FROM python:3.13-slim-bookworm AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     gcc \
+    build-essential \
+    pkg-config \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
