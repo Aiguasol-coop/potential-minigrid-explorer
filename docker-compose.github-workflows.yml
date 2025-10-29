@@ -8,6 +8,7 @@ x-environment: &global_env
   DB_LOCALE: ${DB_LOCALE}
   DB_ICU_LOCALE: ${DB_ICU_LOCALE}
   SERVICE_OFFGRID_PLANNER_URL: "https://potential-optimizer.datuma.aiguasol.coop"
+  WEATHER_DATA_API_HOST: "https://weather-data-rli-db.apps2.rl-institut.de/data/"
 
   API_JWT_ENCODE_KEY: ${API_JWT_ENCODE_KEY}
   DB_ROLE_API_SERVICE_PASSWORD: ${DB_ROLE_API_SERVICE_PASSWORD}
