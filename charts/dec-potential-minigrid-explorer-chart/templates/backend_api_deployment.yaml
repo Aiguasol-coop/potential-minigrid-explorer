@@ -53,6 +53,8 @@ spec:
           value: "{{ .Values.backend.API_ACCESS_TOKEN_EXPIRE_MINUTES }}"
         - name: SERVICE_OFFGRID_PLANNER_URL
           value: "{{ .Values.backend.SERVICE_OFFGRID_PLANNER_URL }}"
+        - name: WEATHER_DATA_API_HOST
+          value: "{{ .Values.backend.WEATHER_DATA_API_HOST }}"
         - name: DB_SUPERADMIN_PASSWORD
           valueFrom:
             secretKeyRef:

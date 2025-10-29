@@ -10,10 +10,12 @@ import pydantic
 import sqlalchemy
 import sqlalchemy.types
 import sqlmodel
+import pandas as pd
 
 import app.db.core as db
 import app.features.domain as features
 import app.service_renewables_ninja.service as rninja
+import app.service_rli_weather.service as rrli
 import app.service_offgrid_planner.demand as demand
 import app.service_offgrid_planner.grid as grid
 import app.service_offgrid_planner.service as offgrid_planner
@@ -232,7 +234,19 @@ def generate_supply_input(
 ) -> supply.SupplyInput:
     first_building = cluster.buildings_as_objects[0]
 
-    solar_potential = rninja.get_pv_data(lat=first_building.latitude, lon=first_building.longitude)
+    try:
+        solar_potential = rrli.get_pv_data(
+            lat=first_building.latitude,
+            lon=first_building.longitude,
+            dt_index=pd.date_range(
+                start="2022-01-01 00:00:00", end="2022-12-31 23:00:00", freq="h"
+            ),
+        )
+    except Exception as e:
+        print("Error fetching RLI weather data, falling back to renewables.ninja:", e)
+        solar_potential = rninja.get_pv_data(
+            lat=first_building.latitude, lon=first_building.longitude
+        )
 
     first_of_year = datetime.datetime(datetime.datetime.now().year, 1, 1, 0, 0, 0)
 

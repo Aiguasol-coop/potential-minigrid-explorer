@@ -362,13 +362,13 @@ def calculate_demand(cluster_centroids: list[Building], session: db.Session) -> 
     )
 
     total_household_daily = {
-        s: d["kwh_per_day"] * d["consumers"] for s, d in household_demand.items()
+        s: d["kwh_per_day"] * 1000 * d["consumers"] for s, d in household_demand.items()
     }
     total_enterprise_daily = {
-        s: d["kwh_per_day"] * d["consumers"] for s, d in enterprise_demand.items()
+        s: d["kwh_per_day"] * 1000 * d["consumers"] for s, d in enterprise_demand.items()
     }
     total_public_daily = {
-        s: d["kwh_per_day"] * d["consumers"] for s, d in public_service_demand.items()
+        s: d["kwh_per_day"] * 1000 * d["consumers"] for s, d in public_service_demand.items()
     }
 
     total_household_hourly = expand_hourly(

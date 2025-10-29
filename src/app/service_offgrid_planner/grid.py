@@ -198,12 +198,15 @@ class GridInput(pydantic.BaseModel):
 
 
 class Links(pydantic.BaseModel):
+    label: list[str]
     lat_from: list[str]
     lon_from: list[str]
     lat_to: list[str]
     lon_to: list[str]
     link_type: list[str]
     length: list[float]
+    from_node: list[str]
+    to_node: list[str]
 
 
 class GridResult(pydantic.BaseModel):

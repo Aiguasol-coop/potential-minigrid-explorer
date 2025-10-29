@@ -57,4 +57,4 @@ if __name__ == "__main__":
         )
         print(data)
     except Exception as exc:
-        print("Error fetching wind data:", exc)
+        print("Error fetching renewables.ninja pv data:", exc)
