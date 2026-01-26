@@ -614,9 +614,7 @@ def populate_public_service_hourly_profile(session: sqlmodel.Session, data: dict
 
 def populate_default_db(db_session: sqlmodel.Session) -> None:
     # Path to the JSON file
-    json_file = os.path.join(
-        os.path.join(os.getcwd(), "src", "scripts", "default_data", "db_data.json")
-    )
+    json_file = os.path.join(os.path.join(os.getcwd(), "scripts", "default_data", "db_data.json"))
 
     # Check if the file exists
     if not os.path.exists(json_file):
