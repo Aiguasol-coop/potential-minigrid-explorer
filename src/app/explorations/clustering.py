@@ -29,36 +29,40 @@ from app.explorations.plotting import plot_buildings_and_grid_lines_with_distanc
 # PARAMETERS
 EPS_VALUE = 300
 PROVINCES = [  # Adjacent number is the building count
-    # "Cabo Delga",  # 449720
+    "Cabo Delga",  # 449720
     "Gaza",  # 83771
     "Inhambane",  # 99401
-    # "Manica",  # 97937
-    # "Maputo",  # 9648
-    # "Maputo Cit",  # 2200
-    # "Nampula",  # 686715
-    # "Niassa",  # 318785
+    "Manica",  # 97937
+    "Maputo",  # 9648
+    "Maputo Cit",  # 2200
+    "Nampula",  # 686715
+    "Niassa",  # 318785
     "Sofala",  # 91996
-    # "Tete",  # 515487
-    # "Zambezia",  # 540639
+    "Tete",  # 515487
+    "Zambezia",  # 540639
 ]
 
 
 class ClusteringParameters(sqlmodel.SQLModel):
-    consumer_count_min: int = sqlmodel.Field(gt=30, default=60, le=500)
+    min_num_of_consumers: int = sqlmodel.Field(gt=30, default=60, le=500)
 
-    diameter_max: float = sqlmodel.Field(gt=0.0, default=1000.0, le=10000.0)
+    max_minigrid_network_distance: float = sqlmodel.Field(gt=0.0, default=1000.0, le=10000.0)
     """Euclidean distance (units: meter) between the two most distant consumers."""
 
-    distance_from_grid_min: float = sqlmodel.Field(ge=20000.0, default=70000.0, le=120000.0)
+    min_distance_from_grid: float = sqlmodel.Field(ge=20000.0, default=70000.0, le=120000.0)
     """Units: meter."""
 
-    match_distance_max: float = sqlmodel.Field(ge=100.0, default=5000.0, le=20000.0)
+    min_distance_to_an_existing_minigrid: float = sqlmodel.Field(
+        ge=100.0, default=5000.0, le=20000.0
+    )
     """Potential minigrids that are at this distance or less of an already existing minigrid are
     filtered out. Units: meter."""
 
+    province: str = sqlmodel.Field(default="All")
+
 
 class ClusteringParametersCreate(ClusteringParameters):
-    debug_consumer_count_max: int | None = None
+    debug_max_num_of_consumers: int | None = None
     """Only for debugging/testing, you can use this parameter to avoid calculating clusters that are
     big and take too long."""
 
@@ -75,12 +79,16 @@ class ClusterBase(sqlmodel.SQLModel):
     cluster_id: int
     province: str
     num_buildings: int
-    distance_to_grid_m: float
-    avg_distance_to_road_m: float
+    estimated_microgrid_network_length: float
+    """Units: km."""
+    distance_to_main_road: float
+    """Units: km."""
+    distance_to_local_road: float
+    """Units: km."""
     avg_surface: float
     eps_meters: float
-    diameter_km: float
-    grid_distance_km: float
+    distance_to_grid: float
+    """Units: km."""
     buildings: list[ClusterBuilding] = sqlmodel.Field(
         sa_column=sqlalchemy.Column(sqlalchemy.dialects.postgresql.JSONB, nullable=False),  # type: ignore
         default_factory=list,
@@ -319,15 +327,20 @@ def generate_clusters(
     num_discarded_clusters = 0
     all_outliers: list[tuple[float, float]] = []
 
-    print(f"\n🌍 Grid distance ≥ {parameters.distance_from_grid_min / 1000} km")
+    print(f"\n🌍 Grid distance ≥ {parameters.min_distance_from_grid / 1000} km")
 
     print("🔄 Retrieving data...")
     mini_grids = get_existing_mini_grids(session)
 
-    for province in PROVINCES:
+    if parameters.province != "All":
+        provinces = [parameters.province]
+    else:
+        provinces = PROVINCES
+
+    for province in provinces:
         # Retrieve building centroids and associated info from DB
         buildings = get_buildings_by_distance_from_grid(
-            session, min_grid_distance_meters=parameters.distance_from_grid_min, province=province
+            session, min_grid_distance_meters=parameters.min_distance_from_grid, province=province
         )
         print(f"🔍 Province: {province}")
         print(f"   Total returned buildings: {len(buildings)}")
@@ -336,7 +349,9 @@ def generate_clusters(
         for building in buildings:
             is_island = building.is_island if building.is_island is not None else False
             dist_road = (
-                building.distance_to_road if building.distance_to_road is not None else 999999
+                building.distance_to_local_road
+                if building.distance_to_local_road is not None
+                else 999999
             )
 
             # TODO: the filtering by distance to road < 1 km can probably be removed (ask Azimut)
@@ -351,7 +366,8 @@ def generate_clusters(
                         "building_type": building.building_type,
                         "surface": building.surface,
                         "dist_grid": building.distance_to_grid,
-                        "dist_road": building.distance_to_road,
+                        "dist_main_road": building.distance_to_main_road,
+                        "dist_local_road": building.distance_to_local_road,
                     }
                 )
         all_valid_buildings += valid_buildings
@@ -361,8 +377,8 @@ def generate_clusters(
             valid_clusters, discarded_clusters, outliers = cluster_buildings(
                 [(c["lat"], c["lon"]) for c in valid_buildings],
                 eps_meters=EPS_VALUE,
-                min_samples=parameters.consumer_count_min,
-                max_diameter=parameters.diameter_max,
+                min_samples=parameters.min_num_of_consumers,
+                max_diameter=parameters.max_minigrid_network_distance,
             )
             all_valid_clusters.update(
                 {i + num_valid_clusters: c for i, c in valid_clusters.items()}
@@ -381,8 +397,8 @@ def generate_clusters(
         all_valid_clusters, all_discarded_clusters, all_outliers = cluster_buildings(
             all_valid_coords,
             eps_meters=EPS_VALUE,
-            min_samples=parameters.consumer_count_min,
-            max_diameter=parameters.diameter_max,
+            min_samples=parameters.min_num_of_consumers,
+            max_diameter=parameters.max_minigrid_network_distance,
         )
 
     cluster_id_counter = 1
@@ -396,7 +412,7 @@ def generate_clusters(
                 (clat, clon),
                 (mg.geography.coordinates.latitude, mg.geography.coordinates.longitude),
             ).km
-            < (parameters.match_distance_max / 1000)
+            < (parameters.min_distance_to_an_existing_minigrid / 1000)
             for mg in mini_grids
         )
         if too_close:
@@ -410,18 +426,23 @@ def generate_clusters(
             if all_valid_buildings[i]["surface"] is not None
         ]
         avg_surface = sum(surfaces) / len(surfaces) if surfaces else 0
+        points = [all_valid_coords[i] for i in members]
+        max_dist = max(great_circle(p1, p2).meters for p1, p2 in combinations(points, 2))
         cluster = ClusterCreate(
             geography=geopydantic.Point(**{"type": "Point", "coordinates": [clon, clat]}),
             cluster_id=cluster_id_counter,
             province=all_valid_buildings[members[0]]["province"],
             num_buildings=len(members),
-            distance_to_grid_m=all_valid_buildings[members[0]]["dist_grid"],
-            avg_distance_to_road_m=sum(all_valid_buildings[i]["dist_road"] for i in members)
+            distance_to_grid=sum(all_valid_buildings[i]["dist_grid"] for i in members)
+            / len(members)
+            / 1000,
+            distance_to_main_road=sum(all_valid_buildings[i]["dist_main_road"] for i in members)
+            / len(members),
+            distance_to_local_road=sum(all_valid_buildings[i]["dist_local_road"] for i in members)
             / len(members),
             avg_surface=avg_surface,
             eps_meters=EPS_VALUE,
-            diameter_km=parameters.diameter_max / 1000,
-            grid_distance_km=parameters.distance_from_grid_min / 1000,
+            estimated_microgrid_network_length=max_dist / 1000,
             buildings=[],
         )
         cluster_records.append(
@@ -432,12 +453,12 @@ def generate_clusters(
                     "longitude",
                     "province",
                     "num_buildings",
-                    "distance_to_grid_m",
-                    "avg_distance_to_road_m",
+                    "distance_to_grid",
+                    "distance_to_main_road",
+                    "distance_to_local_road",
                     "avg_surface",
                     "eps_meters",
-                    "diameter_km",
-                    "grid_distance_km",
+                    "estimated_microgrid_network_length",
                 }
             )
         )

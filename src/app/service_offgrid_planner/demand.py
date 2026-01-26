@@ -7,6 +7,8 @@ from sqlalchemy.sql.elements import ColumnElement
 import pydantic
 import pandas as pd
 import datetime
+import geojson_pydantic as geopydantic
+
 
 import app.db.core as db
 from app.features.domain import Building
@@ -18,6 +20,8 @@ class ElectricalDemand(pydantic.BaseModel):
     area_type: str
     total_annual_demand: float
     hourly_annual_demand: dict[str, float]
+    consumers_types: dict[str, dict[str, int]]
+    existing_consumers: dict[str, geopydantic.Point]
 
 
 class ExistingPublicBuilding(pydantic.BaseModel):
@@ -80,7 +84,7 @@ def convert_hourly_demand_to_df(hourly_demand_dict: dict[str, dict[str, float]])
 
 
 def classify_area_type(df_centroids: pd.DataFrame) -> str:
-    mean_dist_to_road_km = df_centroids["distance_to_road"].mean() / 1000
+    mean_dist_to_road_km = df_centroids["distance_to_main_road"].mean()
     return "periurban" if mean_dist_to_road_km < 5 else "isolated"
 
 
@@ -202,6 +206,10 @@ def build_annual_demand(
     enterprise_hourly: dict[str, dict[str, float]],
     public_service_hourly: dict[str, dict[str, float]],
     area_type: str,
+    household_demand: dict[str, dict[str, float]],
+    enterprise_demand: dict[str, dict[str, float]],
+    public_service_demand: dict[str, dict[str, float]],
+    existing_consumers_types: dict[str, geopydantic.Point],
 ) -> ElectricalDemand:
     households_df = convert_hourly_demand_to_df(household_hourly)
     enterprises_df = convert_hourly_demand_to_df(enterprise_hourly)
@@ -224,10 +232,30 @@ def build_annual_demand(
     hourly_annual_demand.index = hourly_annual_demand.index.strftime("%Y-%m-%d %H:%M:%S")  # type: ignore
     hourly_annual_demand_dict = hourly_annual_demand.to_dict()  # type: ignore
 
+    consumers_types = {
+        "households": {
+            sub: int(data["consumers"])
+            for sub, data in household_demand.items()
+            if data["consumers"] > 0
+        },
+        "enterprises": {
+            sub: int(data["consumers"])
+            for sub, data in enterprise_demand.items()
+            if data["consumers"] > 0
+        },
+        "public_services": {
+            sub: int(data["consumers"])
+            for sub, data in public_service_demand.items()
+            if data["consumers"] > 0
+        },
+    }
+
     return ElectricalDemand(
         area_type=area_type,
         total_annual_demand=float(hourly_annual_demand.sum()),
         hourly_annual_demand=hourly_annual_demand_dict,
+        consumers_types=consumers_types,
+        existing_consumers=existing_consumers_types,
     )
 
 
@@ -338,6 +366,17 @@ def calculate_demand(cluster_centroids: list[Building], session: db.Session) -> 
         existing_categories,
     )
 
+    existing_consumers_types: dict[str, geopydantic.Point] = {
+        get_keys_from_value(
+            CLASS_CONVERSION, f"{row['building_type'].lower()}_{row['category'].lower()}"
+        ): geopydantic.Point(
+            type=row["centroid_geography"]["type"],
+            coordinates=row["centroid_geography"]["coordinates"],
+        )
+        for _, row in df_centroids.iterrows()
+        if row["building_type"] in ["hospital", "school"]
+    }
+
     total_households = int(sum(d["consumers"] for d in household_demand.values()))
     total_enterprises = int(sum(d["consumers"] for d in enterprise_demand.values()))
     total_public = int(sum(d["consumers"] for d in public_service_demand.values()))
@@ -382,7 +421,14 @@ def calculate_demand(cluster_centroids: list[Building], session: db.Session) -> 
     )
 
     result = build_annual_demand(
-        total_household_hourly, total_enterprise_hourly, total_public_service_hourly, area_type
+        total_household_hourly,
+        total_enterprise_hourly,
+        total_public_service_hourly,
+        area_type,
+        household_demand,
+        enterprise_demand,
+        public_service_demand,
+        existing_consumers_types,
     )
 
     return result

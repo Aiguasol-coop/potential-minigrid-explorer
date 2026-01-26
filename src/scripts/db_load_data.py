@@ -38,6 +38,7 @@ def get_engine() -> sqlalchemy.Engine:
 #         (2) their related custom database types
 ALL_TABLES: dict[str, tuple[bool, list[str]]] = {
     "buildings": (True, []),
+    "all_buildings": (True, []),
     "grid_distribution_lines": (True, []),
     "mini_grids": (True, ["minigridstatus"]),
     "cluster": (False, []),

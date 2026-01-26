@@ -25,8 +25,9 @@ from app.features.domain import (
     MiniGrid,
     Road,
     Building,
+    SoloBuilding,
 )
-
+from app.explorations.clustering import PROVINCES
 
 ####################################################################################################
 ###   MODELS AND DB ENTITIES   #####################################################################
@@ -34,7 +35,7 @@ from app.features.domain import (
 
 
 class BuildingResponse(sqlmodel.SQLModel):
-    building_type: str | None = None
+    building_type: str = "household"
     centroid_geography: geopydantic.Point
 
 
@@ -65,10 +66,23 @@ class ExistingMinigrid(sqlmodel.SQLModel):
 ###   FASTAPI PATH OPERATIONS   ####################################################################
 ####################################################################################################
 
-# TODO: Import full centroids layer + recalculate road distance with new shp file.. + review
 
-# existing minigrids layer.
 router = fastapi.APIRouter()
+
+
+@router.get("/provinces", response_model=list[str])
+def get_provinces() -> list[str]:
+    province_list: list[str] = []
+    for province in PROVINCES:
+        if province == "Cabo Delga":
+            province_list.append("Cabo Delgado")
+        elif province == "Maputo Cit":
+            province_list.append("Maputo City")
+        else:
+            province_list.append(province)
+    province_list.append("All")
+
+    return province_list
 
 
 class BadRequestBBOX(str, enum.Enum):
@@ -105,24 +119,52 @@ def get_buildings_by_bbox(
 
     envelope = geofunc.ST_MakeEnvelope(min_lon, min_lat, max_lon, max_lat, 4326)
     centroid_geom: ColumnElement[Any] = sqlalchemy.cast(
-        Building.pg_geography_centroid, Geometry(geometry_type="POINT", srid=4326)
+        SoloBuilding.pg_geography_centroid, Geometry(geometry_type="POINT", srid=4326)
     )
 
-    cluster_centroids: list[Building] = list(
-        db.exec(sqlmodel.select(Building).where(geofunc.ST_Within(centroid_geom, envelope))).all()
+    cluster_centroids: list[SoloBuilding] = list(
+        db.exec(
+            sqlmodel.select(SoloBuilding).where(geofunc.ST_Within(centroid_geom, envelope))
+        ).all()
     )
 
-    buildings: list[BuildingResponse] = []
+    id_shps = [b.id_shp for b in cluster_centroids if b.id_shp is not None]
+    building_centroids = list(
+        db.exec(sqlmodel.select(Building).where(Building.id_shp.in_(id_shps))).all()  # type: ignore
+    )
+
     for building in cluster_centroids:
-        building.building_type = (
-            demand.get_keys_from_value(
-                demand.CLASS_CONVERSION,
-                f"{building.building_type}_{building.category.lower()}",
-            )
-            if building.building_type != "other" and building.category
-            else "household"
+        # Find the corresponding Building data using id_shp
+        matching_building = next(
+            (b for b in building_centroids if b.id_shp == building.id_shp), None
         )
-        buildings.append(BuildingResponse.model_validate(building))
+
+        if matching_building:
+            # Merge the data into the cluster_centroids building
+            building.province = matching_building.province
+            building.electric_demand = matching_building.electric_demand
+            building.has_electricity = matching_building.has_electricity
+            building.category = matching_building.category
+            building.building_type = matching_building.building_type
+            building.surface = matching_building.surface
+            building.distance_to_grid = matching_building.distance_to_grid
+            building.distance_to_main_road = matching_building.distance_to_main_road
+            building.distance_to_local_road = matching_building.distance_to_local_road
+            building.is_island = matching_building.is_island
+
+            # Handle conversion of building type if required
+            building.building_type = (
+                demand.get_keys_from_value(
+                    demand.CLASS_CONVERSION,
+                    f"{building.building_type}_{building.category.lower()}",
+                )
+                if building.building_type != "other" and building.category
+                else "household"
+            )
+
+    buildings: list[BuildingResponse] = [
+        BuildingResponse.model_validate(building) for building in cluster_centroids
+    ]
 
     return buildings
 

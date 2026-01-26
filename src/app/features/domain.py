@@ -84,7 +84,8 @@ class MiniGridBase(sqlmodel.SQLModel):
     max_building_distance: float | None = None
     distance_to_grid: float | None = None
     start_date: datetime.datetime | None = None
-    distance_to_road: float | None = None
+    distance_to_main_road: float | None = None
+    distance_to_local_road: float | None = None
     island: bool | None = None
 
 
@@ -113,7 +114,9 @@ class BuildingBase(sqlmodel.SQLModel):
     surface: float | None = None
     distance_to_grid: float | None = None
     """Unit: meters."""
-    distance_to_road: float | None = None
+    distance_to_main_road: float | None = None
+    """Unit: meters."""
+    distance_to_local_road: float | None = None
     """Unit: meters."""
     is_island: bool | None = None
 
@@ -138,6 +141,25 @@ class Building(BuildingBase, geography.HasPointAndMultipolygonColumn, table=True
         default=None,
         sa_column=sqlalchemy.Column(
             geoalchemy2.Geography(geometry_type="MULTIPOLYGON", srid=4326), nullable=True
+        ),
+    )
+    create_at: datetime.datetime = sqlmodel.Field(default_factory=lambda: datetime.datetime.now())
+
+
+class SoloBuilding(BuildingBase, geography.HasPointAndMultipolygonColumn, table=True):
+    __tablename__ = "all_buildings"  # type: ignore
+
+    id: str | None = sqlmodel.Field(
+        default_factory=lambda: str(uuid.uuid4()), primary_key=True, index=True
+    )
+    id_shp: int | None = sqlmodel.Field(
+        default=None, sa_column=sqlalchemy.Column(sqlalchemy.BigInteger)
+    )
+
+    pg_geography_centroid: str = sqlmodel.Field(
+        default=None,
+        sa_column=sqlalchemy.Column(
+            geoalchemy2.Geography(geometry_type="POINT", srid=4326), nullable=True
         ),
     )
     create_at: datetime.datetime = sqlmodel.Field(default_factory=lambda: datetime.datetime.now())

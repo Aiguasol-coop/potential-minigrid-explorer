@@ -17,10 +17,11 @@ import app.explorations.domain as explorations
 
 CLASS_DICT = {
     "electric_grid": grid.GridDistributionLine,
-    "mini-grids (points)": grid.MiniGrid,
+    "mini_grids_new": grid.MiniGrid,
     "centroids_buildings_20km": grid.Building,
     "polygons_buildings_20km": grid.Building,
     "gis_osm_roads_free_1": grid.Road,
+    "centroids_all_buildings": grid.SoloBuilding,
 }
 
 
@@ -116,7 +117,8 @@ def clean_mini_grids(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
             "num_builds",
             "max_dist",
             "dist_grid",
-            "dist_road",
+            "dist_main_",
+            "dist_local",
             "Island",
             "start_date",
             "geometry",
@@ -133,8 +135,9 @@ def clean_mini_grids(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         "num_buildings",
         "max_building_distance",
         "distance_to_grid",
-        "distance_to_road",
-        "is_island",
+        "distance_to_main_road",
+        "distance_to_local_road",
+        "island",
         "start_date",
         "pg_geography",
     ]
@@ -145,6 +148,14 @@ def clean_mini_grids(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     )
     gdf_clean["status"] = grid.MinigridStatus.known_to_exist.value
     gdf_clean = gdf_clean[gdf_clean["pg_geography"].notnull()]
+
+    gdf_clean["island"] = gdf_clean["island"].map(  # type: ignore
+        {True: True, False: False, "True": True, "False": False, "falso": False, "verdadero": True}  # type: ignore
+    )
+    gdf_clean["estimated_power"] = gdf_clean["estimated_power"].map(  # type: ignore
+        {True: True, False: False, "True": True, "False": False, "falso": False, "verdadero": True}  # type: ignore
+    )
+
     return gdf_clean.replace({np.nan: None})  # type: ignore
 
 
@@ -201,6 +212,65 @@ def read_gdf_in_chunks(
         yield cent_gdf, poly_gdf  # type: ignore
 
 
+def read_buildings_gdf_in_chunks(
+    cent_path: str,
+    cent_cols: list[str] | None = None,
+    chunk_size: int = 200_000,
+    include_geometry: bool = True,
+) -> Iterator[gpd.GeoDataFrame]:
+    # 1) Inspect cheaply without loading all features
+    with fiona.open(cent_path) as src:  # type: ignore
+        total = len(src)
+        crs = src.crs_wkt or src.crs  # type: ignore
+
+    # 2) Stream chunks
+    for start in range(0, total, chunk_size):
+        stop = min(start + chunk_size, total)
+        cent_gdf = gpd.read_file(  # type: ignore
+            cent_path,
+            rows=slice(start, stop),
+            ignore_geometry=not include_geometry,  # GeoPandas will return a DataFrame if True
+        )
+
+        # Set CRS if missing (only meaningful when geometry is present)
+        if include_geometry and (crs is not None) and (getattr(cent_gdf, "crs", None) is None):
+            cent_gdf = cent_gdf.set_crs(crs, allow_override=True)  # type: ignore[attr-defined]
+
+        # Keep only requested columns (and geometry if present)
+        if cent_cols is not None:
+            keep = [c for c in cent_cols if c in cent_gdf.columns]  # type: ignore
+            if include_geometry and "geometry" in cent_gdf.columns:  # type: ignore
+                keep = keep
+            cent_gdf = cent_gdf[keep]  # type: ignore
+
+        yield cent_gdf  # type: ignore
+
+
+def clean_building(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    gdf = gdf.iloc[:, :]
+
+    gdf["id_shp"] = gdf["building_i"]
+    gdf = gdf.dropna(subset=["id_shp"])  # type: ignore
+    gdf["id_shp"] = pd.to_numeric(gdf["id_shp"], errors="coerce").astype("Int64")  # type: ignore
+
+    gdf_clean = gdf.loc[
+        :,
+        [
+            "id_shp",
+            "geometry",
+        ],
+    ].copy()
+
+    gdf_clean.columns = ["id_shp", "geometry"]
+
+    gdf_clean["pg_geography_centroid"] = gdf_clean["geometry"].apply(  # type: ignore
+        lambda geom: geom.wkt if geom else None  # type: ignore
+    )
+    gdf_clean = gdf_clean.drop(columns="geometry")
+
+    return gdf_clean.replace({np.nan: None})  # type: ignore
+
+
 def clean_building_centroids(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     gdf = gdf.iloc[:, :]
 
@@ -219,10 +289,11 @@ def clean_building_centroids(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
             "category",
             "building_t",
             "dist_grid",
-            "dist_road",
             "Island",
             "geometry",
             "area_m2",
+            "main_road_",
+            "local_road",
         ],
     ].copy()
 
@@ -234,10 +305,11 @@ def clean_building_centroids(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         "category",
         "building_type",
         "distance_to_grid",
-        "distance_to_road",
         "is_island",
         "geometry",
         "surface",
+        "distance_to_main_road",
+        "distance_to_local_road",
     ]
 
     gdf_clean["pg_geography_centroid"] = gdf_clean["geometry"].apply(  # type: ignore
@@ -253,7 +325,7 @@ def clean_building_centroids(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
             gdf_clean[col] = pd.to_numeric(gdf_clean[col], errors="coerce")  # type: ignore
 
     gdf_clean["is_island"] = gdf_clean["is_island"].map(  # type: ignore
-        {True: True, False: False, "True": True, "False": False}
+        {True: True, False: False, "True": True, "False": False, "falso": False, "verdadero": True}  # type: ignore
     )
 
     return gdf_clean.replace({np.nan: None})  # type: ignore
@@ -299,10 +371,11 @@ def populate_db(db_session: sqlmodel.Session) -> None:
                         "category",
                         "building_t",
                         "dist_grid",
-                        "dist_road",
                         "Island",
                         "area_m2",
                         "geometry",
+                        "main_road_",
+                        "local_road",
                     ]
                     poly_cols = ["building_i", "geometry"]
                     total_inserted = 0
@@ -343,22 +416,43 @@ def populate_db(db_session: sqlmodel.Session) -> None:
                 continue
 
             basename = os.path.splitext(files[0])[0]  # type: ignore
-            gdf = gpd.read_file(os.path.join(raw, files[0]))  # type: ignore
+            if basename == "centroids_all_buildings":
+                cent_cols = ["building_i", "geometry"]
+                total_inserted = 0
+                centroids_path = os.path.join(raw, "centroids_all_buildings.shp")  # type: ignore
+                for cent_gdf_chunk in read_buildings_gdf_in_chunks(
+                    cent_path=centroids_path,
+                    cent_cols=cent_cols,
+                    chunk_size=200_000,
+                    include_geometry=True,
+                ):
+                    cent = clean_building(cent_gdf_chunk)  # type: ignore
+                    records = cent.to_dict(orient="records")  # type: ignore
 
-            if basename == "electric_grid":
-                clean = clean_grid_lines(gdf)
-            elif basename == "mini-grids (points)":
-                clean = clean_mini_grids(gdf)
-            elif basename == "gis_osm_roads_free_1":
-                clean = clean_roads(gdf)
+                    # Fast path: bulk_insert_mappings (no ORM object construction)
+                    db_session.bulk_insert_mappings(model, records)  # type: ignore
+                    db_session.commit()
+                    total_inserted += len(records)
+                    print(
+                        f"""✔️ Inserted {len(records)} in all buildings, total all buildings
+                        {total_inserted}"""
+                    )
             else:
-                clean = gdf
+                gdf = gpd.read_file(os.path.join(raw, files[0]))  # type: ignore
+                if basename == "electric_grid":
+                    clean = clean_grid_lines(gdf)  # type: ignore
+                elif basename == "mini_grids_new":
+                    clean = clean_mini_grids(gdf)  # type: ignore
+                elif basename == "gis_osm_roads_free_1":
+                    clean = clean_roads(gdf)  # type: ignore
+                else:
+                    clean = gdf  # type: ignore
 
-            df = clean.replace({np.nan: None})  # type: ignore
-            objs = [model(**rec) for rec in df.to_dict("records")]  # type: ignore
-            db_session.bulk_save_objects(objs)  # type: ignore
-            db_session.commit()
-            print(f"✔️ Inserted `{model.__tablename__}`: {len(objs)} records.")  # type: ignore
+                df = clean.replace({np.nan: None})  # type: ignore
+                objs = [model(**rec) for rec in df.to_dict("records")]  # type: ignore
+                db_session.bulk_save_objects(objs)  # type: ignore
+                db_session.commit()
+                print(f"✔️ Inserted `{model.__tablename__}`: {len(objs)} records.")  # type: ignore
         except FileNotFoundError as exp:
             print(f"FileNotFoundError captured: file {exp.filename}")
 

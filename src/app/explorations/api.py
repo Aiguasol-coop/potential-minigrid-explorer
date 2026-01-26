@@ -32,6 +32,7 @@ class PotentialMinigridStatusUpdate(pydantic.BaseModel):
 class PotentialMinigrid(sqlmodel.SQLModel):
     id: pydantic.UUID4
     status: ProjectStatus
+    settlement_type: str | None
     project_input: str | None
     grid_input: str | None
     supply_input: str | None
@@ -46,14 +47,17 @@ class PotentialMinigridResults(sqlmodel.SQLModel):
 
     num_buildings: int
 
-    distance_to_grid_m: float
-    """Euclidean distance (units: meter) between the two most distant consumers."""
+    estimated_microgrid_network_length: float
+    """Euclidean distance (units: km) between the two most distant consumers."""
 
     distance_from_grid: float
-    """Units: meter."""
+    """Units: km."""
 
-    avg_distance_to_road_m: float
-    """Units: meter."""
+    distance_to_main_road: float
+    """Units: km."""
+
+    distance_to_local_road: float
+    """Units: km."""
 
     # TODO: in this field and the following, check and use the units returned by the optimizers.
     lcoe: float | None
@@ -117,6 +121,11 @@ def start_new_exploration(db: db.Session, parameters: ClusteringParametersCreate
     db.exec(sqlmodel.delete(Simulation))  # type: ignore
     db.commit()
 
+    if parameters.province == "Cabo Delgado":
+        parameters.province = "Cabo Delga"
+    elif parameters.province == "Maputo City":
+        parameters.province = "Maputo Cit"
+
     # TODO: Add error handling..
     id = start_exploration(db=db, parameters=parameters)
     if isinstance(id, ExplorationError):
@@ -171,9 +180,10 @@ def get_exploration_progress(
                     id=db_simulation.id,
                     province=db_cluster.province,
                     num_buildings=db_cluster.num_buildings,
-                    distance_to_grid_m=db_cluster.diameter_km,
-                    distance_from_grid=db_cluster.grid_distance_km,
-                    avg_distance_to_road_m=db_cluster.avg_distance_to_road_m,
+                    estimated_microgrid_network_length=db_cluster.estimated_microgrid_network_length,
+                    distance_from_grid=db_cluster.distance_to_grid,
+                    distance_to_main_road=db_cluster.distance_to_main_road,
+                    distance_to_local_road=db_cluster.distance_to_local_road,
                     lcoe=db_cluster.lcoe,
                     capex=db_cluster.capex,
                     res=db_cluster.res,
@@ -248,6 +258,7 @@ def get_exploration_files(
     result: PotentialMinigrid = PotentialMinigrid(
         id=db_simulation.id,
         status=ProjectStatus.POTENTIAL,
+        settlement_type=db_simulation.settlement_type,
         project_input=db_simulation.project_input,
         grid_input=db_simulation.grid_input,
         supply_input=db_simulation.supply_input,

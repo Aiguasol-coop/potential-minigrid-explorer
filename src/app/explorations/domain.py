@@ -11,6 +11,7 @@ import sqlalchemy
 import sqlalchemy.types
 import sqlmodel
 import pandas as pd
+import geojson_pydantic as geopydantic
 
 import app.db.core as db
 import app.features.domain as features
@@ -109,6 +110,10 @@ class Simulation(sqlmodel.SQLModel, table=True):
         sa_column=sqlalchemy.Column(sqlalchemy.Text), default=None
     )
 
+    settlement_type: str | None = sqlmodel.Field(
+        sa_column=sqlalchemy.Column(sqlalchemy.Text), default=None
+    )
+
     grid_input: str = sqlmodel.Field(sa_column=sqlalchemy.Column(sqlalchemy.Text))
 
     grid_results: str | None = sqlmodel.Field(
@@ -172,7 +177,12 @@ class CategoryDistribution(sqlmodel.SQLModel, table=True):
     created_at: datetime.datetime = sqlmodel.Field(default_factory=datetime.datetime.now)
 
 
-def generate_grid_input(total_annual_demand: float, cluster: Cluster) -> grid.GridInput:
+def generate_grid_input(
+    total_annual_demand: float,
+    cluster: Cluster,
+    consumers_types: dict[str, dict[str, int]],
+    existing_consumers: dict[str, geopydantic.Point],
+) -> grid.GridInput:
     nodes: grid.NodeAttributes[grid.ConsumerType] = grid.NodeAttributes()
     nodes.distribution_cost = {}
 
@@ -197,17 +207,76 @@ def generate_grid_input(total_annual_demand: float, cluster: Cluster) -> grid.Gr
     nodes.is_connected[0] = True  # Same value as in the example provided by RLI
     nodes.distribution_cost[0] = 0.0  # Same value as in the example provided by RLI
 
+    # Sort the cluster buildings_as_objects by surface area descending,
+    # so that bigger buildings come first
+    sorted_buildings = sorted(cluster.buildings_as_objects, key=lambda b: b.surface, reverse=True)
+
+    # Sort consumers_types keys to have a deterministic order:
+    sorted_consumers = grid.sort_consumers_by_priority(consumers_types, grid.priority_map)
+
+    # Add existing consumers first:
+    for node_id, (building_id, location) in enumerate(existing_consumers.items(), start=1):
+        nodes.latitude[node_id] = location.coordinates.latitude
+        nodes.longitude[node_id] = location.coordinates.longitude
+        nodes.how_added[node_id] = grid.HowAdded.manual
+        nodes.node_type[node_id] = grid.NodeType.consumer
+        nodes.consumer_type[node_id] = (
+            grid.ConsumerType(grid.consumer_detail_to_consumer_type[building_id])
+            if building_id in grid.consumer_detail_to_consumer_type.keys()
+            else grid.ConsumerType.household
+        )
+        nodes.custom_specification[node_id] = ""  # Same value as in the example provided by RLI
+        # The example provided by RLI uses 0.0, but the type in the schema is int:
+        nodes.shs_options[node_id] = 0
+        nodes.consumer_detail[node_id] = (
+            grid.ConsumerDetail(building_id)
+            if building_id in grid.ConsumerDetail.__dict__.values()
+            else grid.ConsumerDetail.household_very_low
+        )
+        nodes.is_connected[node_id] = True  # Same value as in the example provided by RLI
+        nodes.distribution_cost[node_id] = None
+
+        # Remove this consumer type from sorted_consumers, so that it is not added again below:
+        target_key = f"{grid.consumer_detail_to_consumer_type[building_id]}s"
+        target_val = building_id
+
+        if {target_key: target_val} in sorted_consumers:
+            for i, d in enumerate(sorted_consumers):
+                if d.get(target_key) == target_val:
+                    sorted_consumers.pop(i)
+                    break
+
+        # Remove this building from cluster.buildings_as_objects, by coordinates,
+        # so that it is not added again below:
+        for i, b in enumerate(sorted_buildings):
+            if (
+                b.latitude == location.coordinates.latitude
+                and b.longitude == location.coordinates.longitude
+            ):
+                sorted_buildings.pop(i)
+                break
+
     # Add consumer nodes
-    for node_id, building in enumerate(cluster.buildings_as_objects, start=1):
+    for node_id, building in enumerate(sorted_buildings, start=len(existing_consumers) + 1):
         nodes.latitude[node_id] = building.latitude
         nodes.longitude[node_id] = building.longitude
         nodes.how_added[node_id] = grid.HowAdded.automatic
         nodes.node_type[node_id] = grid.NodeType.consumer
-        nodes.consumer_type[node_id] = grid.ConsumerType.household
+        nodes.consumer_type[node_id] = (
+            grid.ConsumerType(
+                list(sorted_consumers[node_id - 1].keys())[0][::-1].replace("s", "", 1)[::-1]
+            )
+            if node_id - 1 < len(sorted_consumers)
+            else grid.ConsumerType.household
+        )
         nodes.custom_specification[node_id] = ""  # Same value as in the example provided by RLI
         # The example provided by RLI uses 0.0, but the type in the schema is int:
         nodes.shs_options[node_id] = 0
-        nodes.consumer_detail[node_id] = grid.ConsumerDetail.default
+        nodes.consumer_detail[node_id] = (
+            grid.ConsumerDetail(list(sorted_consumers[node_id - 1].values())[0])
+            if node_id - 1 < len(sorted_consumers)
+            else grid.ConsumerDetail.household_very_low
+        )
         nodes.is_connected[node_id] = True  # Same value as in the example provided by RLI
         # TODO: same problem as with the NaN for nodes.shs_options for the power house:
         nodes.distribution_cost[node_id] = None
@@ -387,13 +456,12 @@ class WorkerFindClusters:
             db_session.execute(sqlmodel.delete(Cluster))
             db_session.commit()
 
-            db_clusters, discarded_clusters, outliers = generate_clusters(
-                db_session, self._parameters
-            )
+            db_clusters, discarded_clusters, _ = generate_clusters(db_session, self._parameters)
             for c in db_clusters:
                 if (
-                    self._parameters.debug_consumer_count_max
-                    and c.num_buildings > self._parameters.debug_consumer_count_max
+                    self._parameters.debug_max_num_of_consumers is not None
+                    and self._parameters.debug_max_num_of_consumers > 0
+                    and c.num_buildings > self._parameters.debug_max_num_of_consumers
                 ):
                     continue
 
@@ -436,13 +504,16 @@ class WorkerGenerateOptimizerInputs:
                     self._result = None
                     return self._result
 
-                grid_input, supply_input = self.generate_inputs(db_session, minigrid)
+                grid_input, supply_input, settlement_type = self.generate_inputs(
+                    db_session, minigrid
+                )
 
                 db_simulation = Simulation(
                     exploration_id=self._exploration_id,
                     cluster_id=minigrid.cluster_id,
                     grid_input=grid_input.model_dump_json(),
                     supply_input=supply_input.model_dump_json(),
+                    settlement_type=settlement_type,
                     # status=None,
                 )
                 db_session.add(db_simulation)
@@ -453,7 +524,7 @@ class WorkerGenerateOptimizerInputs:
 
     def generate_inputs(
         self, session: db.Session, cluster: Cluster
-    ) -> tuple[grid.GridInput, supply.SupplyInput]:
+    ) -> tuple[grid.GridInput, supply.SupplyInput, str]:
         building_shp_ids = [building.building_id for building in cluster.buildings_as_objects]
         buildings = session.exec(
             sqlmodel.select(features.Building).where(
@@ -463,13 +534,18 @@ class WorkerGenerateOptimizerInputs:
 
         electric_demand = demand.calculate_demand(list(buildings), session)
 
-        grid_input = generate_grid_input(electric_demand.total_annual_demand, cluster)
+        grid_input = generate_grid_input(
+            electric_demand.total_annual_demand,
+            cluster,
+            electric_demand.consumers_types,
+            electric_demand.existing_consumers,
+        )
 
         supply_input = generate_supply_input(
             list(electric_demand.hourly_annual_demand.values()), cluster
         )
 
-        return (grid_input, supply_input)
+        return (grid_input, supply_input, electric_demand.area_type)
 
     def stop(self):
         self._stop_event.set()

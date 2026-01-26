@@ -39,4 +39,6 @@ class BoundingBox(pydantic.BaseModel):
 
     @functools.cached_property
     def parts(self) -> list[float]:
+        if '"' in self.bbox or "'" in self.bbox:
+            self.bbox = self.bbox.replace('"', "").replace("'", "")
         return list(map(float, self.bbox.split(",")))

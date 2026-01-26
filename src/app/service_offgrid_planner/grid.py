@@ -4,6 +4,107 @@ import typing
 import pydantic
 import pydantic_core
 
+priority_map = {
+    # Public Services (Highest Priority)
+    "Health_Health Centre": 1,
+    "Health_Clinic": 2,
+    "Health_CHPS": 3,
+    "Education_Primary School": 4,
+    "Education_Secondary School": 5,
+    "Education_Trade School": 6,
+    "Public_Administration Office": 7,
+    "Public_Church": 8,
+    "Public_Community Hall or Youth Center": 9,
+    "Public_Lighting": 10,
+    "Public_Military Barrack": 11,
+    "Public_Mosque": 12,
+    "Public_Police Station": 13,
+    "Public_Pump Station": 14,
+    "Public_Telecommunications": 15,
+    # Enterprises (Medium Priority)
+    "Food_Groceries": 16,
+    "Retail_Kiosk": 17,
+    "Food_Restaurant": 18,
+    "Food_Bar": 19,
+    "Food_Fish": 20,
+    "Trades_Tailoring": 21,
+    "Trades_Beauty or Hair": 22,
+    "Trades_Carpentry": 23,
+    "Trades_Car or Motorbike Repair": 24,
+    "Trades_Hotel": 25,
+    "Trades_Laundry": 26,
+    "Trades_Metalworks": 27,
+    # Households (Lowest Priority)
+    "very_high": 28,
+    "high": 29,
+    "medium": 30,
+    "low": 31,
+    "very_low": 32,
+}
+
+consumer_detail_to_consumer_type = {
+    # Public Services (Highest Priority)
+    "Health_Health Centre": "public_service",
+    "Health_Clinic": "public_service",
+    "Health_CHPS": "public_service",
+    "Education_Primary School": "public_service",
+    "Education_Secondary School": "public_service",
+    "Education_Trade School": "public_service",
+    "Public_Administration Office": "public_service",
+    "Public_Church": "public_service",
+    "Public_Community Hall or Youth Center": "public_service",
+    "Public_Lighting": "public_service",
+    "Public_Military Barrack": "public_service",
+    "Public_Mosque": "public_service",
+    "Public_Police Station": "public_service",
+    "Public_Pump Station": "public_service",
+    "Public_Telecommunications": "public_service",
+    # Enterprises (Medium Priority)
+    "Food_Groceries": "enterprise",
+    "Retail_Kiosk": "enterprise",
+    "Food_Restaurant": "enterprise",
+    "Food_Bar": "enterprise",
+    "Food_Fish": "enterprise",
+    "Trades_Tailoring": "enterprise",
+    "Trades_Beauty or Hair": "enterprise",
+    "Trades_Carpentry": "enterprise",
+    "Trades_Car or Motorbike Repair": "enterprise",
+    "Trades_Hotel": "enterprise",
+    "Trades_Laundry": "enterprise",
+    "Trades_Metalworks": "enterprise",
+    # Households (Lowest Priority)
+    "very_high": "household",
+    "high": "household",
+    "medium": "household",
+    "low": "household",
+    "very_low": "household",
+}
+
+
+def sort_consumers_by_priority(
+    consumers_data: dict[str, dict[str, int]], priority_map: dict[str, int]
+) -> list[dict[str, str]]:
+    sorted_consumers: list[dict[str, int | str]] = []
+
+    for category, consumers in consumers_data.items():
+        for name, count in consumers.items():
+            priority = priority_map.get(name, 33)  # Default to 33 if priority not found
+            sorted_consumers.append(
+                {"category": category, "details": name, "priority": priority, "count": count}
+            )
+
+    # Sort by priority
+    sorted_consumers.sort(key=lambda x: x["priority"])
+
+    # Return sorted consumers as a list of dictionaries
+    final_consumers: list[dict[str, str]] = [
+        {consumer["category"]: consumer["details"]}
+        for consumer in sorted_consumers
+        for _ in range(consumers_data[consumer["category"]][consumer["details"]])  # type: ignore
+    ]  # type: ignore
+
+    return final_consumers
+
 
 class HowAdded(str, enum.Enum):
     automatic = "automatic"
@@ -20,6 +121,8 @@ class NodeType(str, enum.Enum):
 
 class ConsumerType(str, enum.Enum):
     household = "household"
+    enterprise = "enterprise"
+    public_service = "public_service"
     na = "n.a."
 
 
@@ -32,8 +135,47 @@ CustomSpecification = CustomSpecLiteral | str
 
 
 class ConsumerDetail(str, enum.Enum):
-    default = "default"
     na = "n.a."
+    agricultural_cold_room = "Agricultural_Cold Room"
+    digital_cinema_or_betting = "Digital_Cinema or Betting"
+    digital_cybercafé = "Digital_Cybercafé"
+    food_bar = "Food_Bar"
+    food_fish = "Food_Fish"
+    food_groceries = "Food_Groceries"
+    food_restaurant = "Food_Restaurant"
+    retail_agricultural = "Retail_Agricultural"
+    retail_electronics = "Retail_Electronics"
+    retail_kiosk = "Retail_Kiosk"
+    retail_other = "Retail_Other"
+    retail_pharmacy = "Retail_Pharmacy"
+    trades_beauty_or_hair = "Trades_Beauty or Hair"
+    trades_car_or_motorbike_repair = "Trades_Car or Motorbike Repair"
+    trades_carpentry = "Trades_Carpentry"
+    trades_hotel = "Trades_Hotel"
+    trades_laundry = "Trades_Laundry"
+    trades_metalworks = "Trades_Metalworks"
+    trades_tailoring = "Trades_Tailoring"
+    education_primary_school = "Education_Primary School"
+    education_school_noICT = "Education_School_noICT"
+    education_secondary_school = "Education_Secondary School"
+    education_trade_school = "Education_Trade School"
+    health_chps = "Health_CHPS"
+    health_clinic = "Health_Clinic"
+    health_health_centre = "Health_Health Centre"
+    public_administration_office = "Public_Administration Office"
+    public_church = "Public_Church"
+    public_community_hall_or_youth_center = "Public_Community Hall or Youth Center"
+    public_lighting = "Public_Lighting"
+    public_military_barrack = "Public_Military Barrack"
+    public_mosque = "Public_Mosque"
+    public_police_station = "Public_Police Station"
+    public_pump_station = "Public_Pump Station"
+    public_telecommunications = "Public_Telecommunications"
+    household_high = "high"
+    household_low = "low"
+    household_medium = "medium"
+    household_very_high = "very_high"
+    household_very_low = "very_low"
 
 
 ConsumerTypeType = typing.TypeVar("ConsumerTypeType")
@@ -226,7 +368,7 @@ if __name__ == "__main__":
     nodes.consumer_type[node_id] = ConsumerType.household
     nodes.custom_specification[node_id] = ""
     nodes.shs_options[node_id] = 0
-    nodes.consumer_detail[node_id] = ConsumerDetail.default
+    nodes.consumer_detail[node_id] = ConsumerDetail.na
     nodes.is_connected[node_id] = True
     nodes.distribution_cost[node_id] = float("NaN")
 
