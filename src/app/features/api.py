@@ -58,7 +58,8 @@ class ExistingMinigrid(sqlmodel.SQLModel):
     pv_capacity: float | None = None
     pv_estimated: bool | None = True
     distance_to_grid: float | None = None
-    distance_to_road: float | None = None
+    distance_to_main_road: float | None = None
+    distance_to_local_road: float | None = None
     centroid: geopydantic.Point
 
 
@@ -248,7 +249,12 @@ def get_existing_minigrids(
                 distance_to_grid=minigrid.distance_to_grid / 1000.0
                 if minigrid.distance_to_grid
                 else None,  # Convert to km
-                distance_to_road=minigrid.distance_to_road,
+                distance_to_main_road=minigrid.distance_to_main_road / 1000.0
+                if minigrid.distance_to_main_road
+                else None,  # Convert to km
+                distance_to_local_road=minigrid.distance_to_local_road / 1000.0
+                if minigrid.distance_to_local_road
+                else None,  # Convert to km
                 centroid=minigrid.geography,
             )
             for minigrid in db_existing_minigrids
