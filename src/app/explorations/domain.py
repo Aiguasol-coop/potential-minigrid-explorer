@@ -285,13 +285,13 @@ def generate_grid_input(
     # have been taken from example file provided by RLI.
     grid_design = grid.GridDesign(
         distribution_cable=grid.DistributionCable(
-            lifetime=25, capex=10.0, max_length=50.0, epc=1.3016123200774503
+            lifetime=25, capex=10.0, max_length=70.0, epc=0.7419406975255303
         ),
         connection_cable=grid.ConnectionCable(
-            lifetime=25, capex=4.0, max_length=20.0, epc=0.5206449280309802
+            lifetime=25, capex=4.0, max_length=30.0, epc=0.2967762790102121
         ),
-        pole=grid.Pole(lifetime=25, capex=800.0, max_n_connections=5, epc=104.12898560619605),
-        mg=grid.Mg(connection_cost=140.0, epc=18.222572481084306),
+        pole=grid.Pole(lifetime=25, capex=800.0, max_n_connections=5, epc=59.35525580204242),
+        mg=grid.Mg(connection_cost=140.0, epc=11.23396220669678),
         shs=grid.Shs(include=True, max_grid_cost=0.6),
     )
 
@@ -334,14 +334,14 @@ def generate_supply_input(
                 "parameters": {
                     "nominal_capacity": None,
                     "lifetime": 7,
-                    "capex": 314.0,
+                    "capex": 314.0,  # 530 USD/kWh AZ360
                     "opex": 24.0,
-                    "soc_min": 0.0,
-                    "soc_max": 10.0,
+                    "soc_min": 0.0,  # 0.2?
+                    "soc_max": 1.0,  # 0.8?
                     "c_rate_in": 1.0,
                     "c_rate_out": 1.0,
                     "efficiency": 0.96,
-                    "epc": 94.56299561338449,
+                    "epc": 79.14322769176445,
                 },
             },
             "diesel_genset": {
@@ -349,16 +349,16 @@ def generate_supply_input(
                 "parameters": {
                     "nominal_capacity": None,
                     "lifetime": 8,
-                    "capex": 350.0,
+                    "capex": 350.0,  # 500 USD/kW AZ360
                     "opex": 25.0,
                     "variable_cost": 0.0,
                     "fuel_cost": 1.7,
                     "fuel_lhv": 11.8,
-                    "min_load": 20.0,
-                    "max_load": 100.0,
+                    "min_load": 0.2,
+                    "max_load": 1.0,  # 0.5 AZ360
                     "min_efficiency": 0.22,
                     "max_efficiency": 0.3,
-                    "epc": 98.3654595406082,
+                    "epc": 82.53536027238394,
                 },
             },
             "inverter": {
@@ -366,10 +366,10 @@ def generate_supply_input(
                 "parameters": {
                     "nominal_capacity": None,
                     "lifetime": 25,
-                    "capex": 415.0,
+                    "capex": 415.0,  # 598 USD/kW AZ360
                     "opex": 9.0,
                     "efficiency": 0.95,
-                    "epc": 63.01691128321419,
+                    "epc": 39.7905389473095,
                 },
             },
             "pv": {
@@ -377,9 +377,9 @@ def generate_supply_input(
                 "parameters": {
                     "nominal_capacity": 441.0,
                     "lifetime": 25,
-                    "capex": 441.0,
+                    "capex": 441.0,  # 1400 USD/kW AZ360
                     "opex": 8.8,
-                    "epc": 66.20110331541557,
+                    "epc": 41.51958476087589,
                 },
             },
             "rectifier": {
@@ -390,14 +390,14 @@ def generate_supply_input(
                     "capex": 415.0,
                     "opex": 0.0,
                     "efficiency": 0.95,
-                    "epc": 54.0169112832142,
+                    "epc": 30.790538947309503,
                 },
             },
             "shortage": {
                 "settings": {"is_selected": True},
                 "parameters": {
-                    "max_shortage_total": 10.0,
-                    "max_shortage_timestep": 20.0,
+                    "max_shortage_total": 0.1,
+                    "max_shortage_timestep": 0.2,
                     "shortage_penalty_cost": 0.8,
                 },
             },

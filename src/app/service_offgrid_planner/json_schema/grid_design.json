@@ -1,0 +1,28 @@
+{
+    "distribution_cable": {
+        "lifetime": 25,
+        "capex": 10.0,
+        "max_length": 70.0,
+        "epc": 0.7419406975255303
+    },
+    "connection_cable": {
+        "lifetime": 25,
+        "capex": 4.0,
+        "max_length": 30.0,
+        "epc": 0.2967762790102121
+    },
+    "pole": {
+        "lifetime": 25,
+        "capex": 800.0,
+        "max_n_connections": 5,
+        "epc": 59.35525580204242
+    },
+    "mg": {
+        "connection_cost": 140.0,
+        "epc": 11.23396220669678
+    },
+    "shs": {
+        "include": true,
+        "max_grid_cost": 0.6
+    }
+}

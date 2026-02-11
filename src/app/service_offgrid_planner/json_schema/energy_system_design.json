@@ -1,0 +1,91 @@
+{
+    "battery": {
+        "settings": {
+            "is_selected": true,
+            "design": true
+        },
+        "parameters": {
+            "nominal_capacity": null,
+            "lifetime": 7,
+            "capex": 314.0,
+            "opex": 24.0,
+            "soc_min": 0.0,
+            "soc_max": 0.1,
+            "c_rate_in": 1.0,
+            "c_rate_out": 1.0,
+            "efficiency": 0.96,
+            "epc": 79.14322769176445
+        }
+    },
+    "diesel_genset": {
+        "settings": {
+            "is_selected": true,
+            "design": true
+        },
+        "parameters": {
+            "nominal_capacity": null,
+            "lifetime": 8,
+            "capex": 350.0,
+            "opex": 25.0,
+            "variable_cost": 0.0,
+            "fuel_cost": 1.7,
+            "fuel_lhv": 11.8,
+            "min_load": 0.2,
+            "max_load": 1.0,
+            "min_efficiency": 0.22,
+            "max_efficiency": 0.3,
+            "epc": 82.53536027238394
+        }
+    },
+    "inverter": {
+        "settings": {
+            "is_selected": true,
+            "design": true
+        },
+        "parameters": {
+            "nominal_capacity": null,
+            "lifetime": 25,
+            "capex": 415.0,
+            "opex": 9.0,
+            "efficiency": 0.95,
+            "epc": 39.7905389473095
+        }
+    },
+    "pv": {
+        "settings": {
+            "is_selected": true,
+            "design": true
+        },
+        "parameters": {
+            "nominal_capacity": 441.0,
+            "lifetime": 25,
+            "capex": 441.0,
+            "opex": 8.8,
+            "epc": 41.51958476087589
+        }
+    },
+    "rectifier": {
+        "settings": {
+            "is_selected": true,
+            "design": true
+        },
+        "parameters": {
+            "nominal_capacity": 5.0,
+            "lifetime": 25,
+            "capex": 415.0,
+            "opex": 0.0,
+            "efficiency": 0.95,
+            "epc": 30.790538947309503
+        }
+    },
+    "shortage": {
+        "settings": {
+            "is_selected": true
+        },
+        "parameters": {
+            "max_shortage_total": 0.1,
+            "max_shortage_timestep": 0.2,
+            "shortage_penalty_cost": 0.8
+        }
+    }
+}
