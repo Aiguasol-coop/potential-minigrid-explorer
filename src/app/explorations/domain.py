@@ -285,13 +285,13 @@ def generate_grid_input(
     # have been taken from example file provided by RLI.
     grid_design = grid.GridDesign(
         distribution_cable=grid.DistributionCable(
-            lifetime=25, capex=25.0, max_length=50.0, epc=0.7419406975255303
+            lifetime=25, capex=25.0, max_length=50.0, epc=3.2540308001936262
         ),
         connection_cable=grid.ConnectionCable(
-            lifetime=25, capex=15, max_length=20.0, epc=0.2967762790102121
+            lifetime=25, capex=15, max_length=20.0, epc=1.9524184801161757
         ),
-        pole=grid.Pole(lifetime=25, capex=800.0, max_n_connections=5, epc=59.35525580204242),
-        mg=grid.Mg(connection_cost=140.0, epc=11.23396220669678),
+        pole=grid.Pole(lifetime=25, capex=800.0, max_n_connections=5, epc=104.12898560619604),
+        mg=grid.Mg(connection_cost=140.0, epc=18.222572481084306),
         shs=grid.Shs(include=True, max_grid_cost=0.6),
     )
 
@@ -341,7 +341,7 @@ def generate_supply_input(
                     "c_rate_in": 1.0,
                     "c_rate_out": 1.0,
                     "efficiency": 0.96,
-                    "epc": 79.14322769176445,
+                    "epc": 143.1031454620821,
                 },
             },
             "diesel_genset": {
@@ -358,7 +358,7 @@ def generate_supply_input(
                     "max_load": 1.0,
                     "min_efficiency": 0.22,
                     "max_efficiency": 0.3,
-                    "epc": 82.53536027238394,
+                    "epc": 129.807799343726,
                 },
             },
             "inverter": {
@@ -369,7 +369,7 @@ def generate_supply_input(
                     "capex": 598.0,
                     "opex": 9.0,
                     "efficiency": 0.95,
-                    "epc": 39.7905389473095,
+                    "epc": 86.83641674063153,
                 },
             },
             "pv": {
@@ -379,7 +379,7 @@ def generate_supply_input(
                     "lifetime": 25,
                     "capex": 1400,
                     "opex": 8.8,
-                    "epc": 41.51958476087589,
+                    "epc": 191.02572481084306,
                 },
             },
             "rectifier": {
@@ -390,7 +390,7 @@ def generate_supply_input(
                     "capex": 415.0,
                     "opex": 0.0,
                     "efficiency": 0.95,
-                    "epc": 30.790538947309503,
+                    "epc": 54.01691128321419,
                 },
             },
             "shortage": {

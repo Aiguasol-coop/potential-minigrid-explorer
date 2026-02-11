@@ -7,14 +7,14 @@
         "parameters": {
             "nominal_capacity": null,
             "lifetime": 7,
-            "capex": 314.0,
+            "capex": 530.0,
             "opex": 24.0,
-            "soc_min": 0.0,
-            "soc_max": 0.1,
+            "soc_min": 0.2,
+            "soc_max": 0.8,
             "c_rate_in": 1.0,
             "c_rate_out": 1.0,
             "efficiency": 0.96,
-            "epc": 79.14322769176445
+            "epc": 143.1031454620821
         }
     },
     "diesel_genset": {
@@ -25,7 +25,7 @@
         "parameters": {
             "nominal_capacity": null,
             "lifetime": 8,
-            "capex": 350.0,
+            "capex": 500.0,
             "opex": 25.0,
             "variable_cost": 0.0,
             "fuel_cost": 1.7,
@@ -34,7 +34,7 @@
             "max_load": 1.0,
             "min_efficiency": 0.22,
             "max_efficiency": 0.3,
-            "epc": 82.53536027238394
+            "epc": 129.807799343726
         }
     },
     "inverter": {
@@ -45,10 +45,10 @@
         "parameters": {
             "nominal_capacity": null,
             "lifetime": 25,
-            "capex": 415.0,
+            "capex": 598.0,
             "opex": 9.0,
             "efficiency": 0.95,
-            "epc": 39.7905389473095
+            "epc": 86.83641674063153
         }
     },
     "pv": {
@@ -57,11 +57,11 @@
             "design": true
         },
         "parameters": {
-            "nominal_capacity": 441.0,
+            "nominal_capacity": null,
             "lifetime": 25,
-            "capex": 441.0,
+            "capex": 1400.0,
             "opex": 8.8,
-            "epc": 41.51958476087589
+            "epc": 191.02572481084306
         }
     },
     "rectifier": {
@@ -70,12 +70,12 @@
             "design": true
         },
         "parameters": {
-            "nominal_capacity": 5.0,
+            "nominal_capacity": null,
             "lifetime": 25,
             "capex": 415.0,
             "opex": 0.0,
             "efficiency": 0.95,
-            "epc": 30.790538947309503
+            "epc": 54.01691128321419
         }
     },
     "shortage": {
