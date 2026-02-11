@@ -37,7 +37,7 @@ priority_map = {
     # Households (Lowest Priority)
     "very_high": 28,
     "high": 29,
-    "medium": 30,
+    "middle": 30,
     "low": 31,
     "very_low": 32,
 }
@@ -75,7 +75,7 @@ consumer_detail_to_consumer_type = {
     # Households (Lowest Priority)
     "very_high": "household",
     "high": "household",
-    "medium": "household",
+    "middle": "household",
     "low": "household",
     "very_low": "household",
 }
@@ -173,7 +173,7 @@ class ConsumerDetail(str, enum.Enum):
     public_telecommunications = "Public_Telecommunications"
     household_high = "high"
     household_low = "low"
-    household_medium = "medium"
+    household_middle = "middle"
     household_very_high = "very_high"
     household_very_low = "very_low"
 

@@ -9,7 +9,7 @@ class HouseholdData(sqlmodel.SQLModel, table=True):
 
     id: int = sqlmodel.Field(primary_key=True, default=None)
     area_type: str  # 'periurban' or 'isolated'
-    subcategory: str  # 'very_low', 'low', 'medium', 'high', 'very_high'
+    subcategory: str  # 'very_low', 'low', 'middle', 'high', 'very_high'
     kwh_per_day: float
     distribution: float
     created_at: datetime.datetime = sqlmodel.Field(default_factory=datetime.datetime.now)
@@ -63,7 +63,7 @@ class HouseholdHourlyProfile(sqlmodel.SQLModel, table=True):
 
     id: int = sqlmodel.Field(primary_key=True, default=None)
     area_type: str  # 'periurban' or 'isolated'
-    subcategory: str  # 'very_low', 'low', 'medium', 'high', 'very_high'
+    subcategory: str  # 'very_low', 'low', 'middle', 'high', 'very_high'
     hourly_profile: dict[str, float] = sqlmodel.Field(sa_column=sqlalchemy.Column(sqlalchemy.JSON))
     created_at: datetime.datetime = sqlmodel.Field(default_factory=datetime.datetime.now)
 

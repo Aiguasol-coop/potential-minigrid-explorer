@@ -69,6 +69,7 @@ class Results(pydantic.BaseModel):
     upfront_invest_rectifier: float | None = None
     upfront_invest_battery: float | None = None
     upfront_invest_pv: float | None = None
+    upfront_invest_total: float | None = None
     co2_emissions: float | None = None
     fuel_consumption: float | None = None
     base_load: float | None = None
@@ -579,6 +580,11 @@ class Project:
                 * getattr(self.energy_system_dict, component).parameters.capex,
             )
 
+        assets = ["grid", "diesel_gen", "inverter", "rectifier", "battery", "pv"]
+        results.upfront_invest_total = sum(
+            [getattr(results, f"upfront_invest_{key}") for key in assets]
+        )
+
         # Environmental and fuel consumption calculations
         results.co2_emissions = self.annualize(
             self.sequences_genset.sum() * self.co2_emission_factor / 1000
@@ -613,11 +619,7 @@ class Project:
         res = self.results_summary
 
         res.lcoe = float(self.results.lcoe)
-        res.capex = float(
-            self.results.cost_grid
-            + self.results.cost_renewable_assets
-            + self.results.cost_non_renewable_assets
-        )
+        res.capex = float(self.results.upfront_invest_total or 0)
         res.res = float(self.results.res)
         res.co2_savings = float(self.results.co2_savings)
         res.consumption_total = float(self.results.total_annual_consumption)

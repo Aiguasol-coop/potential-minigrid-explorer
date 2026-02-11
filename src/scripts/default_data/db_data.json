@@ -14,7 +14,7 @@
         "kwh_per_day": 1.149,
         "distribution": 0.3
       },
-      "medium": {
+      "middle": {
         "kwh_per_day": 2.343,
         "distribution": 0.15
       },
@@ -36,7 +36,7 @@
         "kwh_per_day": 0.624,
         "distribution": 0.25
       },
-      "medium": {
+      "middle": {
         "kwh_per_day": 1.149,
         "distribution": 0.04
       },
@@ -400,7 +400,7 @@
           "23:00-0:00": 0.011
         }
       },
-      "medium": {
+      "middle": {
         "hourly_profile": {
           "0:00-1:00": 0.022,
           "1:00-2:00": 0.022,
@@ -542,7 +542,7 @@
           "23:00-0:00": 0.0223
         }
       },
-      "medium": {
+      "middle": {
         "hourly_profile": {
           "0:00-1:00": 0.0244,
           "1:00-2:00": 0.0244,
