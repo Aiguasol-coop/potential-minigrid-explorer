@@ -285,10 +285,10 @@ def generate_grid_input(
     # have been taken from example file provided by RLI.
     grid_design = grid.GridDesign(
         distribution_cable=grid.DistributionCable(
-            lifetime=25, capex=10.0, max_length=70.0, epc=0.7419406975255303
+            lifetime=25, capex=25.0, max_length=50.0, epc=0.7419406975255303
         ),
         connection_cable=grid.ConnectionCable(
-            lifetime=25, capex=4.0, max_length=30.0, epc=0.2967762790102121
+            lifetime=25, capex=15, max_length=20.0, epc=0.2967762790102121
         ),
         pole=grid.Pole(lifetime=25, capex=800.0, max_n_connections=5, epc=59.35525580204242),
         mg=grid.Mg(connection_cost=140.0, epc=11.23396220669678),
@@ -334,10 +334,10 @@ def generate_supply_input(
                 "parameters": {
                     "nominal_capacity": None,
                     "lifetime": 7,
-                    "capex": 314.0,  # 530 USD/kWh AZ360
+                    "capex": 530,
                     "opex": 24.0,
-                    "soc_min": 0.0,  # 0.2?
-                    "soc_max": 1.0,  # 0.8?
+                    "soc_min": 0.2,
+                    "soc_max": 0.8,
                     "c_rate_in": 1.0,
                     "c_rate_out": 1.0,
                     "efficiency": 0.96,
@@ -349,13 +349,13 @@ def generate_supply_input(
                 "parameters": {
                     "nominal_capacity": None,
                     "lifetime": 8,
-                    "capex": 350.0,  # 500 USD/kW AZ360
+                    "capex": 500.0,
                     "opex": 25.0,
                     "variable_cost": 0.0,
                     "fuel_cost": 1.7,
                     "fuel_lhv": 11.8,
                     "min_load": 0.2,
-                    "max_load": 1.0,  # 0.5 AZ360
+                    "max_load": 1.0,
                     "min_efficiency": 0.22,
                     "max_efficiency": 0.3,
                     "epc": 82.53536027238394,
@@ -366,7 +366,7 @@ def generate_supply_input(
                 "parameters": {
                     "nominal_capacity": None,
                     "lifetime": 25,
-                    "capex": 415.0,  # 598 USD/kW AZ360
+                    "capex": 598.0,
                     "opex": 9.0,
                     "efficiency": 0.95,
                     "epc": 39.7905389473095,
@@ -377,7 +377,7 @@ def generate_supply_input(
                 "parameters": {
                     "nominal_capacity": 441.0,
                     "lifetime": 25,
-                    "capex": 441.0,  # 1400 USD/kW AZ360
+                    "capex": 1400,
                     "opex": 8.8,
                     "epc": 41.51958476087589,
                 },

@@ -102,9 +102,9 @@ class Project:
     def __init__(self, id: pydantic.UUID4):
         self.id = id
         self.n_days = 365
-        self.interest_rate = 5.0  # 12? AZ360
+        self.interest_rate = 12.3  # 12? AZ360
         self.tax = 0.0
-        self.lifetime = 20
+        self.lifetime = 25
         self.wacc = self.interest_rate / 100
         self.crf = (self.wacc * (1 + self.wacc) ** self.lifetime) / (
             (1 + self.wacc) ** self.lifetime - 1
