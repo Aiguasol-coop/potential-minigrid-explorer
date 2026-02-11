@@ -358,12 +358,12 @@ class Project:
         for seq, val in self.sequences.items():
             item: supply.ResultItem = getattr(results, val["key"])
             seq_data = item.sequences
-            setattr(self, f"sequences_{seq}", np.array(seq_data))
+            setattr(self, f"sequences_{seq}", np.array(seq_data) / 1000)
 
         # Fuel consumption conversion
         item: supply.ResultItem = getattr(results, "fuel_source__fuel")
         seq_data = item.sequences
-        self.sequences_fuel_consumption_kWh = np.array(seq_data)
+        self.sequences_fuel_consumption_kWh = np.array(seq_data) / 1000
 
         self.sequences_fuel_consumption = (
             self.sequences_fuel_consumption_kWh
@@ -377,7 +377,7 @@ class Project:
                 return 0
             else:
                 if component.settings.design:
-                    return getattr(results, result_key).scalars["invest"]
+                    return getattr(results, result_key).scalars["invest"] / 1000
                 else:
                     return (
                         component.parameters.nominal_capacity
@@ -395,21 +395,17 @@ class Project:
         self.capacity_battery = get_capacity(self.battery, "electricity_dc__battery")
 
         # Cost and energy calculations
-        self.total_renewable = self.annualize(
-            sum(
-                getattr(self.energy_system_dict, comp).parameters.epc
-                * getattr(self, f"capacity_{comp}")
-                for comp in ["pv", "inverter", "battery"]
-            )
+        self.total_renewable = sum(
+            getattr(self.energy_system_dict, comp).parameters.epc
+            * getattr(self, f"capacity_{comp}")
+            for comp in ["pv", "inverter", "battery"]
         )
 
         self.total_non_renewable = (
-            self.annualize(
-                sum(
-                    getattr(self.energy_system_dict, comp).parameters.epc
-                    * getattr(self, f"capacity_{comp}")
-                    for comp in ["diesel_genset", "rectifier"]
-                )
+            sum(
+                getattr(self.energy_system_dict, comp).parameters.epc
+                * getattr(self, f"capacity_{comp}")
+                for comp in ["diesel_genset", "rectifier"]
             )
             + self.diesel_genset.parameters.variable_cost * self.sequences_genset.sum()
         )
@@ -423,9 +419,7 @@ class Project:
         self.lcoe = 100 * self.total_revenue / self.total_demand
 
         # Key performance indicators
-        self.res = (
-            100 * self.sequences_pv.sum() / (self.sequences_genset.sum() + self.sequences_pv.sum())  # pyright: ignore[reportUnknownMemberType]
-        )
+        self.res = 100 * (self.total_demand - self.sequences_genset.sum()) / self.total_demand
         self.surplus_rate = (
             100
             * self.sequences_surplus.sum()
@@ -469,7 +463,7 @@ class Project:
         # store fuel co2 emissions (kg_CO2 per L of fuel)
         df = pd.DataFrame()
         df["non_renewable_electricity_production"] = (
-            np.cumsum(self.demand) * co2_emission_factor / 1000
+            np.cumsum(self.sequences_demand) * co2_emission_factor / 1000
         )  # tCO2 per year
         df["hybrid_electricity_production"] = (
             np.cumsum(self.sequences_genset) * co2_emission_factor / 1000
@@ -484,10 +478,6 @@ class Project:
 
     def _results(self):
         # Annualized cost calculations
-        def to_kwh(value: float | None) -> float:
-            """Adapt the order of magnitude (normally from W or Wh oemof results to kWh)"""
-            return value / 1000 if value is not None else 0
-
         results = self.results
 
         # Handle missing cost_grid case
@@ -521,7 +511,7 @@ class Project:
         results.res = self.res
         results.shortage_total = self.shortage
         results.surplus_rate = self.surplus_rate
-        results.peak_demand = self.demand.max()
+        results.peak_demand = self.sequences_demand.max()
         results.surplus = self.sequences_surplus.max()
         # TODO no longer needed since sim server should return error
         # results.infeasible = self.infeasible
@@ -538,40 +528,40 @@ class Project:
             setattr(results, key, value)
 
         # Sankey diagram energy flows (all in MWh)
-        results.fuel_to_diesel_genset = to_kwh(
+        results.fuel_to_diesel_genset = (
             self.sequences_fuel_consumption.sum() * 0.846 * self.diesel_genset.parameters.fuel_lhv
         )
 
-        results.diesel_genset_to_rectifier = to_kwh(
+        results.diesel_genset_to_rectifier = (
             self.sequences_rectifier.sum() / self.rectifier.parameters.efficiency
         )
 
         results.diesel_genset_to_demand = (
-            to_kwh(self.sequences_genset.sum()) - results.diesel_genset_to_rectifier
+            self.sequences_genset.sum() - results.diesel_genset_to_rectifier
         )
 
-        results.rectifier_to_dc_bus = to_kwh(self.sequences_rectifier.sum())
-        results.pv_to_dc_bus = to_kwh(self.sequences_pv.sum())
-        results.battery_to_dc_bus = to_kwh(self.sequences_battery_discharge.sum())
-        results.dc_bus_to_battery = to_kwh(self.sequences_battery_charge.sum())
+        results.rectifier_to_dc_bus = self.sequences_rectifier.sum()
+        results.pv_to_dc_bus = self.sequences_pv.sum()
+        results.battery_to_dc_bus = self.sequences_battery_discharge.sum()
+        results.dc_bus_to_battery = self.sequences_battery_charge.sum()
 
         inverter_efficiency = self.inverter.parameters.efficiency or 1
-        results.dc_bus_to_inverter = to_kwh(self.sequences_inverter.sum() / inverter_efficiency)
+        results.dc_bus_to_inverter = self.sequences_inverter.sum() / inverter_efficiency
 
-        results.dc_bus_to_surplus = to_kwh(self.sequences_surplus.sum())
-        results.inverter_to_demand = to_kwh(self.sequences_inverter.sum())
+        results.dc_bus_to_surplus = self.sequences_surplus.sum()
+        results.inverter_to_demand = self.sequences_inverter.sum()
 
         # TODO no longer needed
         # results.time_energy_system_design = self.execution_time
         results.co2_savings = self.annualize(self.co2_savings)
 
         # Demand and shortage statistics
-        results.total_annual_consumption = self.demand_full_year.sum() * (100 - self.shortage) / 100
+        results.total_annual_consumption = self.sequences_demand.sum() * (100 - self.shortage) / 100
         results.average_annual_demand_per_consumer = (
-            self.demand_full_year.mean() * (100 - self.shortage) / 100 / self.num_households * 1000
+            self.sequences_demand.mean() * (100 - self.shortage) / 100 / self.num_households * 1000
         )
-        results.base_load = np.quantile(self.demand_full_year, 0.1)
-        results.max_shortage = (self.sequences_shortage / self.demand).max() * 100
+        results.base_load = np.quantile(self.sequences_demand, 0.1)
+        results.max_shortage = (self.sequences_shortage / self.sequences_demand).max() * 100
 
         # Upfront investment calculations
         investment_fields = {
@@ -611,7 +601,7 @@ class Project:
                 * getattr(self, f"capacity_{component}"),
             )
 
-        results.epc_diesel_genset += self.annualize(
+        results.epc_diesel_genset += (
             self.diesel_genset.parameters.variable_cost * self.sequences_genset.sum(axis=0)
         )
 
