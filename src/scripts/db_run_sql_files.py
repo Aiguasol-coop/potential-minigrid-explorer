@@ -57,8 +57,17 @@ def run_sql_files(directory: str):
             sql_path,
         ]
 
-        environment = settings.model_dump()
-        environment["PGPASSWORD"] = settings.db_superadmin_password
+        environment = os.environ.copy()
+
+        # Dump your settings and force everything to strings for subprocess env
+        for k, v in settings.model_dump().items():
+            if v is None:
+                continue
+            environment[k.upper()] = str(v)  # optional: only if you want ENV_VAR style keys
+            # OR if your settings already match env names, use:
+            # environment[k] = str(v)
+
+        environment["PGPASSWORD"] = str(settings.db_superadmin_password)
 
         try:
             subprocess.run(command, check=True, env=environment)
