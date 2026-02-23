@@ -9,6 +9,7 @@ import app.settings
 # Import table definitions for create_all()
 import app.explorations.domain  # type: ignore
 import app.features.domain  # type: ignore
+import app.monitoring.domain  # type: ignore
 
 
 from scripts.db_populate import populate_db, populate_default_db
@@ -44,6 +45,7 @@ ALL_TABLES: dict[str, tuple[bool, list[str]]] = {
     "cluster": (False, []),
     "exploration": (False, ["explorationstatus"]),
     "simulation": (False, []),
+    "monitoring_mini_grids": (False, []),
     "roads": (True, []),
     "category_distribution": (True, []),
     "household_data": (True, []),
