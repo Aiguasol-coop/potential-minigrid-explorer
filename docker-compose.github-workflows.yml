@@ -14,6 +14,9 @@ x-environment: &global_env
   DB_ROLE_API_SERVICE_PASSWORD: ${DB_ROLE_API_SERVICE_PASSWORD}
   DB_ROLE_DB_OWNER_PASSWORD: ${DB_ROLE_DB_OWNER_PASSWORD}
   DB_SUPERADMIN_PASSWORD: ${DB_SUPERADMIN_PASSWORD}
+  SDS_API_KEY: ${SDS_API_KEY}
+  SDS_BASE_URL: "https://api.smartdatasystem.es/v1"
+  MONITORING_URL_TEMPLATE: "https://funae.smartdatasystem.es/?target=dashboard&componentuuid="
 
 services:
   dec-db:

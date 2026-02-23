@@ -9,6 +9,8 @@ backend:
   API_ACCESS_TOKEN_EXPIRE_MINUTES: "30"
   SERVICE_OFFGRID_PLANNER_URL: "https://potential-optimizer.datuma.aiguasol.coop"
   WEATHER_DATA_API_HOST: "https://weather-data-rli-db.apps2.rl-institut.de/data/"
+  SDS_BASE_URL: "https://api.smartdatasystem.es/v1"
+  MONITORING_URL_TEMPLATE: "https://funae.smartdatasystem.es/?target=dashboard&componentuuid="
   image:
     repository: aiguasol/dec_potential_minigrid_explorer
     pullPolicy: Always

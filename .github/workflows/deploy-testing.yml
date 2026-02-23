@@ -23,6 +23,7 @@ jobs:
       DB_ROLE_API_SERVICE_PASSWORD: ${{ secrets.WORKFLOW_TEST_DB_ROLE_API_SERVICE_PASSWORD }}
       DB_ROLE_DB_OWNER_PASSWORD: ${{ secrets.WORKFLOW_TEST_DB_ROLE_DB_OWNER_PASSWORD }}
       DB_SUPERADMIN_PASSWORD: ${{ secrets.WORKFLOW_TEST_DB_SUPERADMIN_PASSWORD }}
+      SDS_API_KEY: ${{secrets.SDS_API_KEY}}
 
     steps:
       - name: Check docker-compose version
@@ -136,6 +137,7 @@ jobs:
           DB_API:        ${{ secrets.WORKFLOW_TEST_DB_ROLE_API_SERVICE_PASSWORD }}
           JWT_KEY:       ${{ secrets.WORKFLOW_TEST_API_JWT_ENCODE_KEY }}
           PGADMIN_PW:    ${{ secrets.WORKFLOW_TEST_PGADMIN_DEFAULT_PASSWORD }}
+          SDS_API_KEY:   ${{ secrets.SDS_API_KEY}}
         run: |
           set -x
 
@@ -147,6 +149,7 @@ jobs:
             --from-literal=DB_ROLE_DB_OWNER_PASSWORD="$DB_OWNER" \
             --from-literal=DB_ROLE_API_SERVICE_PASSWORD="$DB_API" \
             --from-literal=API_JWT_ENCODE_KEY="$JWT_KEY" \
+            --from-literal=SDS_API_KEY="$SDS_API_KEY" \
             --from-literal=PGADMIN_DEFAULT_PASSWORD="$PGADMIN_PW" \
             -n dec --kubeconfig=.kube/config
       

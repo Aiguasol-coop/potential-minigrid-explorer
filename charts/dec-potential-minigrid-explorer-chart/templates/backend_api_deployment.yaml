@@ -55,8 +55,6 @@ spec:
           value: "{{ .Values.backend.SERVICE_OFFGRID_PLANNER_URL }}"
         - name: WEATHER_DATA_API_HOST
           value: "{{ .Values.backend.WEATHER_DATA_API_HOST }}"
-        - name: SDS_API_KEY
-          value: "{{ .Values.backend.SDS_API_KEY }}"
         - name: SDS_BASE_URL
           value: "{{ .Values.backend.SDS_BASE_URL }}"
         - name: MONITORING_URL_TEMPLATE
@@ -81,6 +79,11 @@ spec:
             secretKeyRef:
               name: {{ .Values.project.name }}-secrets
               key: API_JWT_ENCODE_KEY
+        - name: SDS_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.project.name }}-secrets
+              key: SDS_API_KEY
         readinessProbe:
           exec:
             command:
