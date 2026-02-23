@@ -11,8 +11,10 @@ x-environment: &global_env
 
   SERVICE_OFFGRID_PLANNER_URL: "https://potential-optimizer.datuma.aiguasol.coop"
   WEATHER_DATA_API_HOST: "https://weather-data-rli-db.apps2.rl-institut.de/data/"
-  # http://host.docker.internal:5001
-  #https://optimizer-offgridplanner-app.apps2.rl-institut.de
+
+  SDS_API_KEY: 56aba07c182d6bd1e2510fbae27af7a7150f3d3a2e6c3b3391668f3f8df140c4
+  SDS_BASE_URL: "https://api.smartdatasystem.es/v1"
+  MONITORING_URL_TEMPLATE: "https://funae.smartdatasystem.es/?target=dashboard&componentuuid="
 
 services:
   env-starter:

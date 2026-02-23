@@ -74,8 +74,8 @@ class Settings(MainSettings):
     db_role_db_owner_password: str
     db_role_api_service_password: str
     sds_api_key: str
-    sds_base_url: str
-    monitoring_url_template: str
+    sds_base_url: str = "https://api.smartdatasystem.es/v1"
+    monitoring_url_template: str = "https://funae.smartdatasystem.es/?target=dashboard&componentuuid="
     monitoring_workers: int = 5
     stale_max_age_minutes: int = 180
 
