@@ -18,6 +18,8 @@ from app.explorations.domain import (
     ProjectStatus,
 )
 
+from app.features.domain import MinigridStatus, MiniGrid
+
 # TODO: Review all models make consistent and review field values and units
 ####################################################################################################
 ###   MODELS AND DB ENTITIES   #####################################################################
@@ -172,9 +174,18 @@ def get_exploration_progress(
             detail=f"Exploration with ID {exploration_id} not found or no minigrids processed yet.",
         )
 
+    # Get existing minigrids with status != known_to_exist to avoid returning
+    # them in the potential minigrids list.
+    smt = sqlmodel.select(MiniGrid).where(MiniGrid.status != MinigridStatus.known_to_exist)
+    db_existing_minigrids = db.exec(smt).all()
+
+    already_saved_minigrids_ids = [minigrid.id for minigrid in db_existing_minigrids if minigrid.id]
+
     potential_minigrids: list[PotentialMinigridResults] = []
     for _, db_simulation, db_cluster in db_tuples:
         if db_simulation and db_cluster:
+            if db_simulation.id in already_saved_minigrids_ids:
+                continue
             potential_minigrids.append(
                 PotentialMinigridResults(
                     id=db_simulation.id,

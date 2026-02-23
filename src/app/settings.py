@@ -73,6 +73,11 @@ class Settings(MainSettings):
     db_superadmin_password: str
     db_role_db_owner_password: str
     db_role_api_service_password: str
+    sds_api_key: str
+    sds_base_url: str
+    monitoring_url_template: str
+    monitoring_workers: int = 5
+    stale_max_age_minutes: int = 180
 
     # This makes possible for the Settings class to automatically read secrets from files. Secret
     # files contain only a value, and the key is the filename:

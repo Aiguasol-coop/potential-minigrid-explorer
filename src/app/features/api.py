@@ -231,7 +231,9 @@ def get_grid_network(db: db.Session) -> list[GridDistributionLineResponse]:
 def get_existing_minigrids(
     db: db.Session,
 ) -> list[ExistingMinigrid]:
-    db_existing_minigrids = db.exec(sqlmodel.select(MiniGrid)).all()
+    db_existing_minigrids = db.exec(
+        sqlmodel.select(MiniGrid).where(MiniGrid.status == MinigridStatus.known_to_exist)
+    ).all()
 
     if not db_existing_minigrids:
         raise fastapi.HTTPException(
@@ -292,10 +294,9 @@ def notify_existing_minigrid(db: db.Session, minigrid: ExistingMinigrid) -> util
         operator=minigrid.operator,
         pv_power=minigrid.pv_capacity,
         estimated_power=minigrid.pv_estimated,
-        distance_to_grid=minigrid.distance_to_grid * 1000.0
-        if minigrid.distance_to_grid
-        else None,  # Convert to m
-        distance_to_road=minigrid.distance_to_road,
+        distance_to_grid=minigrid.distance_to_grid,
+        distance_to_main_road=minigrid.distance_to_main_road,
+        distance_to_local_road=minigrid.distance_to_local_road,
         pg_geography=geography._point_to_database(minigrid.centroid),  # type: ignore
     )
 

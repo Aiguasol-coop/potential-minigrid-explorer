@@ -49,6 +49,10 @@ def get_session() -> collections.abc.Generator[sqlmodel.Session]:
         yield session
 
 
+def init_db():
+    sqlmodel.SQLModel.metadata.create_all(get_engine())
+
+
 @contextlib.contextmanager
 def get_logging_session(
     name: str = "Unnamed session",

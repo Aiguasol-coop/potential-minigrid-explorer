@@ -20,7 +20,7 @@ import app.profiles.api as profiles
 import app.explorations.api as explorations
 import app.features.api as features
 import app.general.api as general
-
+import app.monitoring.api as monitoring
 
 api = fastapi.FastAPI(lifespan=lambda app: startup_and_shutdown(app))
 """FastAPI object that we use as the entrypoint for the API service.
@@ -34,12 +34,14 @@ class Tags(Enum):
     explorations = "Potential minigrid search"
     features = "Country features"
     general = "General"
+    monitoring = "Monitoring"
 
 
 api.include_router(general.router, prefix="", tags=[Tags.general])
 api.include_router(profiles.router, prefix="/profiles", tags=[Tags.profiles])
 api.include_router(explorations.router, prefix="/explorations", tags=[Tags.explorations])
 api.include_router(features.router, prefix="/features", tags=[Tags.features])
+api.include_router(monitoring.router, prefix="/monitoring", tags=[Tags.monitoring])
 
 
 ####################################################################################################
