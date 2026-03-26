@@ -1,0 +1,116 @@
+x-environment: &global_env
+  DB_HOST: db-app
+  DB_PORT: "5432"
+  DB_NAME: test
+  DB_SUPERADMIN_USERNAME: postgres
+  DB_SUPERADMIN_PASSWORD: test
+  DB_ROLE_API_SERVICE_USERNAME: api_service
+  DB_ROLE_DB_OWNER_PASSWORD: test
+  DB_ROLE_API_SERVICE_PASSWORD: test
+
+  SERVICE_OFFGRID_PLANNER_URL: "https://potential-optimizer.datuma.aiguasol.coop"
+  WEATHER_DATA_API_HOST: "https://weather-data-rli-db.apps2.rl-institut.de/data/"
+  SDS_API_KEY: 56aba07c182d6bd1e2510fbae27af7a7150f3d3a2e6c3b3391668f3f8df140c4
+  SDS_BASE_URL: "https://api.smartdatasystem.es/v1"
+  MONITORING_URL_TEMPLATE: "https://funae.smartdatasystem.es/?target=dashboard&componentuuid="
+
+services:
+  env-starter:
+    image: alpine
+    platform: linux/amd64
+    restart: "no"
+    healthcheck:
+      test: "[ -f /run/secrets/db_superadmin_password ]"
+      interval: 1s
+      retries: 10
+      start_period: 0s
+    environment:
+      <<: *global_env
+    volumes:
+      - secrets_volume:/run/secrets
+    command:
+      - sh
+      - -c
+      - |
+        apk add --no-cache openssl
+        echo 'DO NOT DO THIS IN PRODUCTION!: Writing a test only secret for db_role_db_owner_password...'
+        echo 'test' > /run/secrets/db_role_db_owner_password
+        [ -f /run/secrets/db_role_api_service_password ] || openssl rand -hex 32 > /run/secrets/db_role_api_service_password
+        [ -f /run/secrets/db_superadmin_password ] || openssl rand -hex 32 > /run/secrets/db_superadmin_password
+        [ -f /run/secrets/api_jwt_encode_key] || openssl rand -hex 32 > /run/secrets/api_jwt_encode_key
+        sleep infinity
+
+  db-app:
+    image: postgis/postgis:17-3.5
+    platform: linux/amd64
+    container_name: postgres-app
+    restart: unless-stopped
+    depends_on:
+      env-starter:
+        condition: service_healthy
+    environment:
+      <<: *global_env
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_superadmin_password
+      POSTGRES_DB: test
+    volumes:
+      - secrets_volume:/run/secrets:ro
+      - ../../database/postgres-setup.d:/docker-entrypoint-initdb.d:ro
+      - db_app_volume:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d test"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  app:
+    image: aiguasol/dec_potential_minigrid_explorer:latest
+    platform: linux/amd64
+    depends_on:
+      db-app:
+        condition: service_healthy
+      env-starter:
+        condition: service_healthy
+    environment:
+      <<: *global_env
+    volumes:
+      - secrets_volume:/run/secrets:ro
+    ports:
+      - "8000:8000"
+    stdin_open: true
+    tty: true
+    command: >
+      sh -c "
+        python src/scripts/db_load_data.py --tables all &&
+        exec uvicorn main:api --app-dir src/app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'
+      "
+
+  pgadmin:
+    image: dpage/pgadmin4:8
+    container_name: pgadmin
+    restart: unless-stopped
+    depends_on:
+      db-app:
+        condition: service_healthy
+    environment:
+      PGADMIN_DEFAULT_EMAIL: test@example.com
+      PGADMIN_DEFAULT_PASSWORD: test
+      PGADMIN_LISTEN_PORT: 80
+    ports:
+      - "8082:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ../../tests/pgadmin_config/servers.json:/pgadmin4/servers.json:ro
+
+volumes:
+  secrets_volume:
+    name: dec_potential_secrets
+
+  db_app_volume:
+    name: dec_potential_db_app
+
+  pgadmin_data:
+    name: dec_potential_pgadmin_data
