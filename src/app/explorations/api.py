@@ -109,19 +109,19 @@ router = fastapi.APIRouter()
 def start_new_exploration(db: db.Session, parameters: ClusteringParametersCreate) -> pydantic.UUID4:
     """Start a new exploration with the given parameters."""
 
-    db_exploration_running = db.exec(
-        sqlmodel.select(Exploration).where(Exploration.status == ExplorationStatus.RUNNING)
-    ).first()
-    if db_exploration_running:
-        raise fastapi.HTTPException(
-            status_code=fastapi.status.HTTP_409_CONFLICT,
-            detail=f"""An exploration with ID {db_exploration_running.id} is already running;
-            please stop it or wait until it finishes.""",
-        )
+    # db_exploration_running = db.exec(
+    #     sqlmodel.select(Exploration).where(Exploration.status == ExplorationStatus.RUNNING)
+    # ).first()
+    # if db_exploration_running:
+    #     raise fastapi.HTTPException(
+    #         status_code=fastapi.status.HTTP_409_CONFLICT,
+    #         detail=f"""An exploration with ID {db_exploration_running.id} is already running;
+    #         please stop it or wait until it finishes.""",
+    #     )
 
-    db.exec(sqlmodel.delete(Cluster))  # type: ignore
-    db.exec(sqlmodel.delete(Simulation))  # type: ignore
-    db.commit()
+    # db.exec(sqlmodel.delete(Cluster))  # type: ignore
+    # db.exec(sqlmodel.delete(Simulation))  # type: ignore
+    # db.commit()
 
     if parameters.province == "Cabo Delgado":
         parameters.province = "Cabo Delga"
@@ -153,13 +153,16 @@ def get_exploration_progress(
         .outerjoin(
             Simulation,
             sqlmodel.and_(
-                Simulation.exploration_id == Exploration.id,  # type: ignore
-                Simulation.status == SimulationStatus.PROCESSED,  # type: ignore
+                Simulation.exploration_id == Exploration.id,
+                Simulation.status == SimulationStatus.PROCESSED,
             ),
         )
         .outerjoin(
             Cluster,
-            Cluster.cluster_id == Simulation.cluster_id,  # type: ignore
+            sqlmodel.and_(
+                Cluster.cluster_id == Simulation.cluster_id,
+                Cluster.exploration_id == Exploration.id,
+            ),
         )
         .where(
             Exploration.id == exploration_id,

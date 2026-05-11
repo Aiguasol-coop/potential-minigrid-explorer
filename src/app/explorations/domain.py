@@ -285,14 +285,14 @@ def generate_grid_input(
     # have been taken from example file provided by RLI.
     grid_design = grid.GridDesign(
         distribution_cable=grid.DistributionCable(
-            lifetime=25, capex=25.0, max_length=50.0, epc=3.2540308001936262
+            lifetime=25, capex=15.0, max_length=50.0, epc=1.95241848011618
         ),
         connection_cable=grid.ConnectionCable(
-            lifetime=25, capex=15, max_length=20.0, epc=1.9524184801161757
+            lifetime=25, capex=10, max_length=20.0, epc=1.30161232007745
         ),
-        pole=grid.Pole(lifetime=25, capex=800.0, max_n_connections=5, epc=104.12898560619604),
-        mg=grid.Mg(connection_cost=140.0, epc=18.222572481084306),
-        shs=grid.Shs(include=True, max_grid_cost=0.6),
+        pole=grid.Pole(lifetime=25, capex=800.0, max_n_connections=5, epc=104.128985606196),
+        mg=grid.Mg(connection_cost=200.0, epc=26.032246401549),
+        shs=grid.Shs(include=True, max_grid_cost=2),
     )
 
     return grid.GridInput(nodes=nodes, grid_design=grid_design, yearly_demand=total_annual_demand)
@@ -333,15 +333,15 @@ def generate_supply_input(
                 "settings": {"is_selected": True, "design": True},
                 "parameters": {
                     "nominal_capacity": None,
-                    "lifetime": 7,
+                    "lifetime": 8,
                     "capex": 530,
                     "opex": 24.0,
                     "soc_min": 0.2,
-                    "soc_max": 0.8,
+                    "soc_max": 0.9,
                     "c_rate_in": 1.0,
                     "c_rate_out": 1.0,
                     "efficiency": 0.96,
-                    "epc": 143.1031454620821,
+                    "epc": 135.09626730435,
                 },
             },
             "diesel_genset": {
@@ -365,11 +365,11 @@ def generate_supply_input(
                 "settings": {"is_selected": True, "design": True},
                 "parameters": {
                     "nominal_capacity": None,
-                    "lifetime": 25,
+                    "lifetime": 15,
                     "capex": 598.0,
                     "opex": 9.0,
-                    "efficiency": 0.95,
-                    "epc": 86.83641674063153,
+                    "efficiency": 0.92,
+                    "epc": 100.24700585765,
                 },
             },
             "pv": {
@@ -378,8 +378,8 @@ def generate_supply_input(
                     "nominal_capacity": 441.0,
                     "lifetime": 25,
                     "capex": 1400,
-                    "opex": 8.8,
-                    "epc": 191.02572481084306,
+                    "opex": 12.0,
+                    "epc": 194.225724810843,
                 },
             },
             "rectifier": {
@@ -387,18 +387,18 @@ def generate_supply_input(
                 "parameters": {
                     "nominal_capacity": 5.0,
                     "lifetime": 25,
-                    "capex": 415.0,
+                    "capex": 300.0,
                     "opex": 0.0,
                     "efficiency": 0.95,
-                    "epc": 54.01691128321419,
+                    "epc": 39.0483696023235,
                 },
             },
             "shortage": {
                 "settings": {"is_selected": True},
                 "parameters": {
-                    "max_shortage_total": 0.1,
-                    "max_shortage_timestep": 0.2,
-                    "shortage_penalty_cost": 0.8,
+                    "max_shortage_total": 0.03,
+                    "max_shortage_timestep": 0.05,
+                    "shortage_penalty_cost": 2,
                 },
             },
         }
@@ -452,9 +452,9 @@ class WorkerFindClusters:
 
             assert db_exploration
 
-            # Truncate table Cluster
-            db_session.execute(sqlmodel.delete(Cluster))
-            db_session.commit()
+            # # Truncate table Cluster
+            # db_session.execute(sqlmodel.delete(Cluster))
+            # db_session.commit()
 
             db_clusters, discarded_clusters, _ = generate_clusters(db_session, self._parameters)
             for c in db_clusters:
@@ -464,7 +464,7 @@ class WorkerFindClusters:
                     and c.num_buildings > self._parameters.debug_max_num_of_consumers
                 ):
                     continue
-
+                c.exploration_id = self._exploration_id
                 db_session.add(c)
 
             db_session.commit()
@@ -497,7 +497,9 @@ class WorkerGenerateOptimizerInputs:
 
             assert db_exploration
 
-            potential_minigrids = db_session.exec(sqlmodel.select(Cluster)).all()
+            potential_minigrids = db_session.exec(
+                sqlmodel.select(Cluster).where(Cluster.exploration_id == self._exploration_id)
+            ).all()
 
             for minigrid in potential_minigrids:
                 if self._stop_event.is_set():
@@ -821,7 +823,8 @@ class WorkerProcessSimulationResults:
                         sim_results = self.process_simulation_results(simulation)
                         cluster = db_session.exec(
                             sqlmodel.select(Cluster).where(
-                                Cluster.cluster_id == simulation.cluster_id
+                                Cluster.cluster_id == simulation.cluster_id,
+                                Cluster.exploration_id == self._exploration_id,
                             )
                         ).one()
                         assert cluster

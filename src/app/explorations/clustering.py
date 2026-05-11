@@ -124,6 +124,8 @@ class Cluster(ClusterBase, geography.HasPointColumn, table=True):
         default_factory=lambda: str(uuid.uuid4()), primary_key=True, index=True
     )
 
+    exploration_id: pydantic.UUID4 = sqlmodel.Field(foreign_key="exploration.id", index=True)
+
     pg_geography: str = sqlmodel.Field(
         default=None,
         sa_column=sqlalchemy.Column(
